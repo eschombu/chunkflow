@@ -24,54 +24,57 @@ def load_png_images(
         voxel_offset: Cartesian = Cartesian(0, 0, 0),
         voxel_size: Cartesian = Cartesian(1, 1, 1),
         digit_num: int = 5,
-        dtype: np.dtype = None):
+        dtype: np.dtype = None,
+        layer_type: str = 'image'
+):
     if isinstance(dtype, str):
         dtype = np.dtype(dtype)
-        
-    file_names = []
+
+    path_prefix = os.path.expanduser(path_prefix)
+    if os.path.isfile(path_prefix):
+        dir_path = os.path.dirname(path_prefix)
+        all_png_filenames = [os.path.basename(path_prefix)]
+    else:
+        if os.path.isdir(path_prefix):
+            if not path_prefix.endswith('/'):
+                path_prefix += '/'
+            dir_path = path_prefix
+        else:
+            dir_path = os.path.dirname(path_prefix)
+        all_png_filenames = sorted(fname for fname in os.listdir(dir_path) if fname.endswith('.png'))
 
     if bbox is None:
-        if os.path.isfile(path_prefix):
-            file_names.append(path_prefix)
-        else:
-            if os.path.isdir(path_prefix):
-                dir_path = path_prefix
-            else:
-                dir_path = os.path.dirname(path_prefix)
-            fname = os.path.expanduser(dir_path)
-            for fname in sorted(os.listdir(dir_path)):
-                if fname.endswith('.png'):
-                    fname = os.path.join(dir_path, fname)
-                    file_names.append(fname)
+        file_names = [os.path.join(dir_path, fname) for fname in all_png_filenames]
         arr = load_png_image(file_names[0])
         shape = Cartesian(len(file_names), arr.shape[0], arr.shape[1])
-        if dtype is None:
-            dtype = arr.dtype
         bbox = BoundingBox.from_delta(voxel_offset, shape)
+    elif len(all_png_filenames) == bbox.shape[0]:
+        file_names = [os.path.join(dir_path, fname) for fname in all_png_filenames]
     else:
-        for z in range(bbox.start[0], bbox.stop[0]):
+        # Allow for a path prefix and a bbox to determine which png files to load
+        file_names = []
+        for z in tqdm(range(bbox.start[0], bbox.stop[0])):
             file_name = f'{path_prefix}{z:0>{digit_num}d}.png'
-            file_name = os.path.expanduser(file_name)
-            file_names.append(file_name)
+            if os.path.exists(file_name):
+                file_names.append(file_name)
+            else:
+                print(f'Warning: {file_name} does not exist')
 
     chunk = Chunk.from_bbox(
-        bbox, dtype=dtype, 
+        bbox,
+        dtype=dtype,
         pattern='zero', 
-        voxel_size=voxel_size
+        voxel_size=voxel_size,
     )
 
     for z_offset, file_name in tqdm(enumerate(file_names)):
-        if os.path.exists(file_name):
-            if z_offset > 0:
-                arr = load_png_image(file_name)
+        arr = load_png_image(file_name)
+        if arr.dtype != dtype:
+            arr = arr.astype(dtype)
 
-            if arr.dtype != dtype:
-                arr = arr.astype(dtype)
-            # breakpoint()
-            chunk.array[z_offset, :, :] = arr[
-                bbox.start[1]:bbox.stop[1], 
-                bbox.start[2]:bbox.stop[2]]
-        else:
-            print(f'image file do not exist: {file_name}')
-    
+        chunk.array[z_offset, :, :] = arr[
+            bbox.start[1]:bbox.stop[1],
+            bbox.start[2]:bbox.stop[2]]
+
+    chunk.layer_type = layer_type if layer_type is not None else 'unknown'
     return chunk

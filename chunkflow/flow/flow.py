@@ -918,12 +918,15 @@ def save_nrrd(tasks, input_chunk_name, file_name):
               help='infer chunk cutout boundaries from other chunks.')
 @click.option('--dtype', type=str, default=None,
               help='data type of output chunk.')
+@click.option('--layer-type', type=str, default='image',
+              help='layer type of output chunk (default: image).')
 @operator
 def load_png(tasks: dict, path: str, 
                 output_chunk_name: str, cutout_offset: tuple,
                 voxel_offset: tuple, voxel_size: tuple, 
-                digit_num: int, chunk_size: tuple, infer_chunk: bool, dtype: str):
-    """Read a serials of png files."""
+                digit_num: int, chunk_size: tuple, infer_chunk: bool,
+                dtype: str, layer_type: str):
+    """Read a series of png files."""
     cutout_offset = Cartesian.from_collection(cutout_offset)
     voxel_offset = Cartesian.from_collection(voxel_offset)
     voxel_size = Cartesian.from_collection(voxel_size)
@@ -946,6 +949,7 @@ def load_png(tasks: dict, path: str,
                 digit_num=digit_num,
                 voxel_size=voxel_size,
                 dtype=dtype,
+                layer_type=layer_type,
             )
         yield task
 
