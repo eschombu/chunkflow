@@ -826,6 +826,7 @@ def read_npy(tasks, name: str, file_path: str, resolution: tuple, output_name: s
             task['log']['timer'][name] = time() - start
         yield task
 
+
 @main.command('load-json')
 @click.option('--name', '-n', type=str, default='load-json', help='name of operator.')
 @click.option('--file-path', '-f', 
@@ -850,6 +851,33 @@ def read_json(tasks, name: str, file_path: str, output_name: str):
             task['log']['timer'][name] = time() - start
         yield task
 
+
+@main.command('save-json')
+@click.option('--name', '-n', type=str, default='save-json', help='name of operator.')
+@click.option('--file-path', '-f',
+              type=click.Path(file_okay=True, dir_okay=True, resolve_path=True),
+              default=None, help='JSON file name')
+@click.option('--inputs', '-i', required=True, type=str,
+              help='a list of input names separated by commas.')
+@operator
+def save_json(tasks, name: str, file_path: str, inputs: str):
+    """Write JSON file."""
+    for task in tasks:
+        if task is not None:
+            start = time()
+            input_names = inputs.split(',')
+            if file_path is None:
+                if len(input_names) > 1:
+                    raise ValueError('file path is required if more than one input variables are being saved')
+                file_path = f'{input_names[0]}.json'
+            if len(input_names) == 1 and isinstance(task[input_names[0]], dict):
+                data = task[input_names[0]]
+            else:
+                data = {name: task[name] for name in input_names}
+            with open(file_path, 'w') as file:
+                json.dump(data, file)
+            task['log']['timer'][name] = time() - start
+        yield task
 
 
 @main.command('save-nrrd')
