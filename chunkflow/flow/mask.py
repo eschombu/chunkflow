@@ -15,13 +15,14 @@ class MaskOperator(OperatorBase):
                  chunk_mip: int,
                  inverse: bool = False,
                  fill_missing: bool = True,
+                 inplace: bool = True,
                  name: str = 'mask'):
         super().__init__(name=name)
 
         self.mask_mip = mask_mip
         self.chunk_mip = chunk_mip
         self.inverse = inverse
-        
+        self.inplace = inplace
         self.mask_vol = CloudVolume(volume_path,
                                     bounded=False,
                                     fill_missing=fill_missing,
@@ -37,14 +38,16 @@ class MaskOperator(OperatorBase):
         """
         if isinstance(chunks, Chunk):
             chunks = [chunks]
-        elif len(chunks)>1: 
+        if not self.inplace:
+            chunks = [chunk.clone() for chunk in chunks]
+        if len(chunks) > 1:
             for chunk in chunks:
                 assert isinstance(chunk, Chunk)
                 assert chunk.voxel_offset == chunks[0].voxel_offset
                 assert chunk.voxel_size == chunks[0].voxel_size
         
         assert isinstance(chunks, list)
-        assert len(chunks)>0
+        assert len(chunks) > 0
 
         voxel_size = chunks[0].voxel_size
 
@@ -70,7 +73,6 @@ class MaskOperator(OperatorBase):
 
         assert np.any(mask_in_high_mip)
 
-        
         for chunk in chunks:
             # make it the same type with input
             mask_in_high_mip = mask_in_high_mip.astype(chunk.dtype)
