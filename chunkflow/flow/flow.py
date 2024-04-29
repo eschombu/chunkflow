@@ -21,6 +21,7 @@ from cloudfiles import CloudFiles
 
 from chunkflow.lib.aws.sqs_queue import SQSQueue
 from chunkflow.lib.cartesian_coordinate import Cartesian, BoundingBox, BoundingBoxes
+from chunkflow.lib.utils import infer_bbox
 from chunkflow.synapses import Synapses
 
 from chunkflow.chunk import Chunk
@@ -909,17 +910,19 @@ def save_nrrd(tasks, input_chunk_name, file_name):
 @click.option('--voxel-size', '-x', type=click.INT, nargs=3, default=(1,1,1), callback=default_none,
               help='physical size of voxels. the unit is assumed to be nm.')
 @click.option('--digit-num', '-d', type=click.INT, default=5,
-    help='the total number of digits with leading zero padding. For example, digit_num=3, the file name will be like 001.png')
+              help='the total number of digits with leading zero padding, e.g., digit_num=3 --> "003"')
 @click.option('--chunk-size', '-s',
               type=click.INT, nargs=3, default=None, callback=default_none,
               help='cutout chunk size')
-@click.option('--dtype', type=str, default=None, 
-    help = 'data type of output chunk.')
+@click.option('--infer-chunk/--no-infer-chunk', '-i', default=False,
+              help='infer chunk cutout boundaries from other chunks.')
+@click.option('--dtype', type=str, default=None,
+              help='data type of output chunk.')
 @operator
 def load_png(tasks: dict, path: str, 
                 output_chunk_name: str, cutout_offset: tuple,
                 voxel_offset: tuple, voxel_size: tuple, 
-                digit_num: int, chunk_size: tuple, dtype: str):
+                digit_num: int, chunk_size: tuple, infer_chunk: bool, dtype: str):
     """Read a serials of png files."""
     cutout_offset = Cartesian.from_collection(cutout_offset)
     voxel_offset = Cartesian.from_collection(voxel_offset)
@@ -929,17 +932,21 @@ def load_png(tasks: dict, path: str,
             if chunk_size is None:
                 if 'bbox' in task:
                     bbox = task['bbox']
+                elif infer_chunk:
+                    bbox = infer_bbox(task)
                 else:
                     bbox = None
             else:
                 bbox = BoundingBox.from_delta(cutout_offset, chunk_size)
 
             task[output_chunk_name] = load_png_images(
-                path, bbox = bbox, 
+                path,
+                bbox=bbox,
                 voxel_offset=voxel_offset,
                 digit_num=digit_num,
                 voxel_size=voxel_size,
-                dtype=dtype)
+                dtype=dtype,
+            )
         yield task
 
 
@@ -959,15 +966,28 @@ def load_png(tasks: dict, path: str,
 @click.option('--dtype', '-d',
               type=click.Choice(['uint8', 'uint16', 'uint32', 'uint64', 'float32', 'float64', 'float16']),
               help='convert to data type')
+@click.option('--infer-chunk/--no-infer-chunk', '-i', default=False,
+              help='infer chunk cutout boundaries from other chunks.')
 @click.option('--output-chunk-name', '-o', type=str, default='chunk',
               help='chunk name in the global state')
 @operator
 def load_tif(tasks, name: str, file_name: str, voxel_offset: tuple,
-             voxel_size: tuple, layer_type: str, dtype: str, output_chunk_name: str):
+             voxel_size: tuple, layer_type: str, dtype: str, infer_chunk: bool, output_chunk_name: str):
     """Read tiff files."""
     for task in tasks:
         if task is not None:
             start = time()
+            if infer_chunk:
+                chunk = None
+                for key in task:
+                    if isinstance(task[key], Chunk):
+                        chunk = task[key]
+                        break
+                if chunk is not None:
+                    if voxel_offset is None:
+                        voxel_offset = chunk.voxel_offset
+                    if voxel_size is None:
+                        voxel_size = chunk.voxel_size
             task[output_chunk_name] = Chunk.from_tif(
                 file_name,
                 dtype=dtype,
@@ -1215,6 +1235,8 @@ def delete_var(tasks, var_names: str):
 @click.option('--chunk-size', '-z',
               type=click.INT, nargs=3, default=None, callback=default_none,
               help='cutout chunk size.')
+@click.option('--infer-chunk/--no-infer-chunk', '-i', default=False,
+              help='infer chunk cutout boundaries from other chunks.')
 @click.option('--fill-missing/--no-fill-missing',
               default=True, help='fill the missing chunks in input volume with zeros ' +
               'or not, default is false')
@@ -1233,9 +1255,8 @@ def delete_var(tasks, var_names: str):
     ' sometimes you may need to have a secondary volume to work on.'
 )
 @operator
-def load_precomputed(tasks, name: str, volume_path: str, mip: int,
-        chunk_start: tuple, chunk_size: tuple,
-        expand_margin_size: tuple,
+def load_precomputed(tasks, name: str, volume_path: str, mip: int, expand_margin_size: tuple,
+        chunk_start: tuple, chunk_size: tuple, infer_chunk: bool,
         fill_missing: bool, validate_mip: int, blackout_sections: bool,
         use_https: bool, output_chunk_name: str):
     """Cutout chunk from volume."""
@@ -1257,6 +1278,8 @@ def load_precomputed(tasks, name: str, volume_path: str, mip: int,
         if task is not None:
             if 'bbox' in task:
                 bbox = task['bbox']
+            elif infer_chunk:
+                bbox = infer_bbox(task, chunk_start, chunk_size)
             else:
                 # use bounding box of volume
                 if chunk_start is None:
@@ -2113,6 +2136,7 @@ def mesh_manifest(prefix: str,
             operator(prefix, digits)
     yield None
 
+
 @main.command('download-mesh')
 @click.option('--volume-path', '-v', type=str, required=True,
     help="volume path of segmentation layer formated as Neuroglancer Precomputed.")
@@ -2337,7 +2361,6 @@ def view(tasks, name, image_chunk_name, segmentation_chunk_name):
             operator(task[image_chunk_name],
                         seg=segmentation_chunk_name)
         yield task
-
 
 
 if __name__ == '__main__':
