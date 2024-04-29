@@ -1953,40 +1953,44 @@ def multiply(tasks, input_names: str, output_names: str, multiplier_name: str):
 @click.option('--name', type=str, default='mask', help='name of this operator')
 @click.option('--input-names', '-i',
               type=str, default=DEFAULT_CHUNK_NAME, help='input chunk names')
-@click.option('--output-names', '-o',
-              type=str, default=None, help='output chunk names')
+@click.option('--output-suffix', '-o',
+              type=str, default='masked', help='output chunk names suffix')
 @click.option('--volume-path', '-v',
               type=str, required=True, help='mask volume path')
 @click.option('--mip', '-m', 
               type=click.INT, default=5, help='mip level of mask')
 @click.option('--inverse/--no-inverse',
               default=False,
-              help='inverse the mask or not. default is True. ' +
-              'the mask will be multiplied to chunk.')
+              help='inverse the mask or not (default is no-inverse).')
+@click.option('--inplace/--copy',
+              default=True,
+              help='modify chunks in-place or return modified copy (default is in-place).')
 @click.option('--fill-missing/--no-fill-missing',
               default=True,
-              help='fill missing blocks with black or not. ' +
-              'default is False.')
+              help='fill missing blocks with black or not (default is fill-missing).')
 @operator
-def mask(tasks, name, input_names: str, output_names: str, volume_path: str, 
-         mip: int, inverse: bool, fill_missing: bool):
+def mask(tasks, name, input_names: str, output_suffix: str, volume_path: str,
+         mip: int, inverse: bool, inplace: bool, fill_missing: bool):
     """Mask the chunk. The mask could be in higher mip level and we
     will automatically upsample it to the same mip level with chunk.
     """
-    if output_names is None:
-        output_names = input_names
-        
     operator = MaskOperator(volume_path,
                             mip,
                             state['mip'],
                             inverse=inverse,
                             fill_missing=fill_missing,
+                            inplace=inplace,
                             name=name)
 
     input_names = input_names.split(',')
-    output_names = output_names.split(',')
+    if inplace:
+        output_names = input_names
+    else:
+        output_names = [f'{name}_{output_suffix}' for name in input_names]
+
     assert len(input_names) == len(output_names)
     assert len(input_names) > 0
+
     for task in tasks:
         if task is not None:
             start = time()
@@ -1994,7 +1998,10 @@ def mask(tasks, name, input_names: str, output_names: str, volume_path: str,
             for input_name in input_names:
                 chunks.append(task[input_name])
 
-            operator(chunks)
+            if inplace:
+                operator(chunks)
+            else:
+                chunks = operator(chunks)
 
             for output_name, chunk in zip(output_names, chunks):    
                 task[output_name] = chunk
