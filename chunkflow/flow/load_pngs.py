@@ -26,26 +26,30 @@ def load_png_images(
         dtype: np.dtype = np.uint8):
     if isinstance(dtype, str):
         dtype = np.dtype(dtype)
-        
-    file_names = []
+
+    if os.path.isdir(path_prefix):
+        if not path_prefix.endswith('/'):
+            path_prefix += '/'
+        dir_path = path_prefix
+    else:
+        dir_path = os.path.dirname(path_prefix)
+    all_png_filenames = [fname for fname in os.listdir(dir_path) if fname.endswith('.png')]
 
     if bbox is None:
-        if os.path.isdir(path_prefix):
-            dir_path = path_prefix
-        else:
-            dir_path = os.path.dirname(path_prefix)
-        fname = os.path.expanduser(dir_path)
-
+        file_names = []
         for fname in sorted(os.listdir(dir_path)):
             if fname.endswith('.png'):
                 fname = os.path.join(dir_path, fname)
-                file_names.append(fname)
-        
+                file_names.append(os.path.expanduser(fname))
+
         img = load_image(file_names[0])
         shape = Cartesian(len(file_names), img.shape[0], img.shape[1])
         bbox = BoundingBox.from_delta(voxel_offset, shape)
+    elif len(all_png_filenames) == bbox.shape[0]:
+        file_names = [os.path.expanduser(os.path.join(dir_path, fname)) for fname in sorted(all_png_filenames)]
     else:
-        for z in range(bbox.start[0], bbox.stop[0]):
+        file_names = []
+        for z in tqdm(range(bbox.start[0], bbox.stop[0])):
             file_name = f'{path_prefix}{z:0>{digit_num}d}.png'
             file_name = os.path.expanduser(file_name)
             file_names.append(file_name)
@@ -63,5 +67,5 @@ def load_png_images(
             chunk.array[z_offset, :, :] = img[bbox.start[1]:bbox.stop[1], bbox.start[2]:bbox.stop[2]]
         else:
             print(f'image file do not exist: {file_name}')
-    
+
     return chunk
