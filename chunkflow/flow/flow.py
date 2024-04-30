@@ -1506,31 +1506,57 @@ def save_zarr(tasks, store: str, shape: tuple, input_chunk_name: str):
 
 
 @main.command('evaluate-segmentation')
-@click.option("--segmentation-chunk-name",
-              "-s",
-              type=str,
-              default="chunk",
-              help="chunk name of segmentation")
-@click.option("--groundtruth-chunk-name",
-              "-g",
-              type=str,
-              default="groundtruth",
+@click.option("--segmentation-chunk-name", "-s",
+              type=str, default="chunk",
+              help="chunk names of segmentations to evaluate")
+@click.option("--groundtruth-chunk-name", "-g",
+              type=str, default="groundtruth",
               help="chunk name of ground truth")
 @click.option('--output', '-o',
-              type=str,
-              default='seg_score',
-              help='segmentation evaluation result name.')
+              type=str, default='segmentation_metrics',
+              help='segmentation evaluation metrics name.')
+@click.option('--mask-volume', '-m', type=str, default=None,
+              help='mask volume for evaluation.')
+@click.option('--mask-mip', '-m',
+              type=click.INT, default=5,
+              help='mip level of mask')
+@click.option('--inverse-mask/--no-inverse-mask', default=False,
+              help='inverse the mask or not (default is no-inverse).')
+@click.option('--fill-missing-mask/--no-fill-missing-mask', default=True,
+              help='fill missing blocks with black or not (default is fill-missing).')
 @operator
-def evaluate_segmentation(tasks, segmentation_chunk_name,
-                          groundtruth_chunk_name, output):
+def evaluate_segmentation(tasks, segmentation_chunk_name, groundtruth_chunk_name, output,
+                          mask_volume, mask_mip, inverse_mask, fill_missing_mask):
     """Evaluate segmentation by split/merge error.
     """
+    if mask_volume is not None:
+        mask_op = MaskOperator(mask_volume,
+                               mask_mip,
+                               state['mip'],
+                               inverse=inverse_mask,
+                               fill_missing=fill_missing_mask,
+                               inplace=False,
+                               name='mask')
+    else:
+        mask_op = None
+
     for task in tasks:
         if task is not None:
-            seg = Segmentation(task[segmentation_chunk_name])
-            groundtruth = Segmentation(task[groundtruth_chunk_name])
-            print(f'evaluating segmentation: {segmentation_chunk_name} vs {groundtruth_chunk_name}...')
-            task[output] = seg.evaluate(groundtruth)
+            results = {}
+            if mask_op:
+                groundtruth = Segmentation(mask_op(task[groundtruth_chunk_name])[0])
+                results['mask_volume'] = mask_volume
+            else:
+                groundtruth = Segmentation(task[groundtruth_chunk_name])
+            results['target_segmentation'] = groundtruth_chunk_name
+            for chunk_name in segmentation_chunk_name.split(','):
+                if mask_op:
+                    seg = Segmentation(mask_op(task[chunk_name])[0])
+                else:
+                    seg = Segmentation(task[chunk_name])
+                print(f'evaluating segmentation: {chunk_name} vs {groundtruth_chunk_name}...')
+                results[chunk_name] = groundtruth.evaluate(seg)
+            task[output] = results
         yield task
 
 
