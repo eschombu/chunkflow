@@ -1005,8 +1005,7 @@ def load_tif(tasks, name: str, file_name: str, voxel_offset: tuple,
     default=None, help='convert to this data type.')
 @click.option('--compression', '-c', 
     type=click.Choice(['', 'zlib', 'lzw', 'lzma', 'delta', 'packints', 'jpeg']),
-    default = 'zlib', help = 'encoders that supported by tifffile' 
-)
+    default='zlib', help='encoders that supported by tifffile')
 @operator
 def save_tif(tasks, input_chunk_name: str, file_name: str, dtype: str, compression: str):
     """Save chunk as a TIF file."""
@@ -1124,14 +1123,12 @@ def load_h5(tasks, name: str, file_name: str, dataset_path: str,
 @click.option('--with-offset/--without-offset', default=True, type=bool,
               help='add voxel_offset dataset or not.')
 @click.option('--voxel-size', '-v',
-    default=None, type=click.INT, callback=default_none, nargs=3,
-    help='voxel size of this chunk.'
-)
-@click.option('--dtype', '-d', default=None, type=str, 
-    help='data type conversion.')
-@click.option('--touch/--no-touch', default=True, 
-help = 'create an empty file if the input is None.'
-)
+              default=None, type=click.INT, callback=default_none, nargs=3,
+              help='voxel size of this chunk.')
+@click.option('--dtype', '-d', default=None, type=str,
+              help='data type conversion.')
+@click.option('--touch/--no-touch', default=True,
+              help='create an empty file if the input is None.')
 @operator
 def save_h5(tasks, input_name: str, file_name: str, chunk_size: tuple, 
         compression: str, with_offset: bool, voxel_size: tuple, dtype: str, touch: bool):
