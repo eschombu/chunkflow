@@ -395,7 +395,7 @@ emitRGB(vec3(toNormalized(getDataValue(0)),
                             raise ValueError('affinity map is not working yet. To-Do.')
                         else:
                             raise ValueError('unsupported data type.')
-                    if data.layer_type == 'segmentation':
+                    elif data.layer_type == 'segmentation':
                         self._append_segmentation_layer(*layer_args, **layer_kwargs)
                     elif data.layer_type == 'probability_map':
                         self._append_probability_map_layer(*layer_args, **layer_kwargs)
