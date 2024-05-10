@@ -54,5 +54,6 @@ class AffinityMap(Chunk):
         image = (image * 255.).astype(np.uint8)
         image = Chunk(image)
         image.set_properties(self.properties)
+        image.layer_type = None
         # assert np.issubdtype(image.dtype, np.uint8)
         return image
