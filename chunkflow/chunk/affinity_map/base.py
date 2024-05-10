@@ -5,11 +5,12 @@ import numpy as np
 from chunkflow.lib.cartesian_coordinate import Cartesian
 from chunkflow.chunk import Chunk
 
+
 class AffinityMap(Chunk):
     """
     a chunk of affinity map. It has x,y,z three channels with single precision.
     """
-    def __init__(self, array: np.ndarray, 
+    def __init__(self, array: np.ndarray,
             voxel_offset: Cartesian=None, 
             voxel_size: Cartesian=None,
             layer_type: str = None):
@@ -26,11 +27,11 @@ class AffinityMap(Chunk):
     def from_chunk(cls, chk: Chunk):
         assert isinstance(chk, Chunk)
         return cls(chk.array, 
-            voxel_offset = chk.voxel_offset,
-            voxel_size = chk.voxel_size,
-            layer_type = chk.layer_type)
+            voxel_offset=chk.voxel_offset,
+            voxel_size=chk.voxel_size,
+            layer_type=chk.layer_type)
 
-    def quantize(self, mode: str='xy'):
+    def quantize(self, mode: str = 'xy'):
         """transform affinity map to gray scale image
 
         Args:
