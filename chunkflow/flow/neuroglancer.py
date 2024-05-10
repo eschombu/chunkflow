@@ -331,7 +331,7 @@ emitRGB(vec3(toNormalized(getDataValue(0)),
             shader=shader
         )
 
-    def __call__(self, datas: dict, selected: str=None):
+    def __call__(self, datas: dict, selected: str=None, ignore_missing=False):
         """
         Parameters:
         chunks: multiple chunks
@@ -365,6 +365,8 @@ emitRGB(vec3(toNormalized(getDataValue(0)),
         with viewer.txn() as viewer_state:
             for name in selected:
                 name, layer_kwargs = parse_selected_args(name)
+                if name not in datas and ignore_missing:
+                    continue
                 data = datas[name]
                 layer_args = (viewer_state, name, data)
                 # breakpoint()

@@ -2260,13 +2260,15 @@ def napari(tasks, name, voxel_size, inputs):
 @click.option('--port', '-p', type=click.INT, default=None, help='port to use')
 @click.option('--inputs', '-i', type=str, default='chunk', 
               help='a list of chunk names separated by comma.')
+@click.option('--ignore-missing/--raise-missing', '-I/', default=False,
+              help='toggle exceptions for missing chunk names.')
 @operator
-def neuroglancer(tasks, name, voxel_size, port, inputs):
+def neuroglancer(tasks, name, voxel_size, port, inputs, ignore_missing):
     """Visualize the chunk using neuroglancer."""
     operator = NeuroglancerOperator(name=name, port=port, voxel_size=voxel_size)
     for task in tasks:
         if task is not None:
-            operator(task, selected=inputs)
+            operator(task, selected=inputs, ignore_missing=ignore_missing)
         yield task
 
 
