@@ -48,6 +48,7 @@ setup(
     entry_points='''
         [console_scripts]
         chunkflow=chunkflow.flow.flow:main
+        chunkflow-script=chunkflow.scripting.main:main
     ''',
     classifiers=[
         'Environment :: Console',
