@@ -522,9 +522,9 @@ class BoundingBox:
 class BoundingBoxes(UserList):
     @classmethod
     def from_manual_setup(cls,
-            chunk_size:Union[Vec, tuple], 
-            chunk_overlap: Union[Vec, tuple, Cartesian]=Cartesian(0,0,0),
-            roi_start: Union[Vec, tuple, Cartesian]=None, 
+            chunk_size:Union[Vec, tuple],
+            chunk_overlap: Union[Vec, tuple, Cartesian]=None,
+            roi_start: Union[Vec, tuple, Cartesian]=None,
             roi_stop: Union[Vec, tuple, Cartesian]=None, 
             roi_size: Union[Vec, tuple, Cartesian]=None,
             grid_size: Union[Vec, tuple, Cartesian]=None,
@@ -535,6 +535,9 @@ class BoundingBoxes(UserList):
             mip: int = 0,
             use_https: bool = False,
             ):
+
+        if chunk_overlap is None:
+            chunk_overlap = Cartesian(0, 0, 0)
 
         if not volume_path:
             if grid_size is None and roi_size is None and roi_stop is None:
@@ -580,7 +583,7 @@ class BoundingBoxes(UserList):
                     roi_start = dataset_offset - chunk_overlap
         assert roi_start is not None
         assert chunk_size is not None
-        
+
         if not isinstance(chunk_size, Cartesian):
             chunk_size = Cartesian.from_collection(chunk_size)
         if not isinstance(chunk_overlap, Cartesian):

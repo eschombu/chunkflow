@@ -136,10 +136,11 @@ make the chunk size consistent or cut off at the stopping boundary.""")
 @generator
 def generate_tasks(
         volume_path: str, mip: int, roi_start: tuple, roi_stop: tuple, 
-        roi_size: tuple, chunk_size: tuple, bounding_box:str,
-        grid_size: tuple, file_path: str, queue_name: str, 
-        respect_chunk_size: bool, aligned_block_size: tuple, 
-        task_index_start: tuple, task_index_stop: tuple, 
+        roi_size: tuple, chunk_size: tuple, chunk_overlap: tuple,
+        bounding_box: str, grid_size: tuple,
+        respect_chunk_size: bool, aligned_block_size: tuple,
+        task_index_start: tuple, task_index_stop: tuple,
+        file_path: str, queue_name: str,
         disbatch: bool, use_https: bool):
     """Generate a batch of tasks."""
     if mip is None:
@@ -155,8 +156,9 @@ def generate_tasks(
     else:
         bboxes = BoundingBoxes.from_manual_setup(
             chunk_size, volume_path=volume_path,
-            roi_start=roi_start, roi_stop=roi_stop, 
+            roi_start=roi_start, roi_stop=roi_stop,
             roi_size=roi_size, mip=mip, grid_size=grid_size,
+            chunk_overlap=chunk_overlap,
             respect_chunk_size=respect_chunk_size,
             aligned_block_size=aligned_block_size,
             use_https=use_https
