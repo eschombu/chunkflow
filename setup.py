@@ -49,6 +49,7 @@ setup(
         [console_scripts]
         chunkflow=chunkflow.flow.flow:main
         chunkflow-script=chunkflow.scripting.main:main
+        chunkflow-neuroglancer=chunkflow.scripting.neuroglancer:main
     ''',
     classifiers=[
         'Environment :: Console',
