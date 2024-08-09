@@ -54,19 +54,34 @@ from .view import ViewOperator
 
 @main.command('create-bbox')
 @click.option('--start', '-s', 
-    type=click.INT, required=True, nargs=3,
-    help = 'voxel offset or start of the bounding box.')
+    type=click.INT, default=None, nargs=3,
+    help='voxel offset or start of the bounding box.')
 @click.option('--stop', '-p',
     type=click.INT, default=None, nargs=3, callback=default_none,
     help='voxel stop or end of bounding box.')
+@click.option('--center', '-c',
+    type=click.INT, default=None, nargs=3, callback=default_none,
+    help='center of bounding box.')
 @click.option('--size', '-z', 
     type=click.INT, default=None, nargs=3, callback=default_none,
     help='volume size or dimension.')
 @generator
-def create_bbox(start: tuple, stop: tuple, size: tuple):
-    assert stop is not None or size is not None
+def create_bbox(start: tuple, stop: tuple, center: tuple, size: tuple):
+    vars = [start, stop, center, size]
+    assert sum([v is not None for v in vars]) == 2, 'Only two of start, stop, center, and size should be provided.'
+    if start is None:
+        if stop is not None and size is not None:
+            start = Cartesian.from_collection(stop) - Cartesian.from_collection(size)
+        elif center is not None and size is not None:
+            start = Cartesian.from_collection(center) - Cartesian.from_collection(size) // 2
     if stop is None:
-        stop = Cartesian.from_collection(start) + Cartesian.from_collection(size)
+        if start is not None and size is not None:
+            stop = Cartesian.from_collection(start) + Cartesian.from_collection(size)
+        elif center is not None and size is not None:
+            stop = Cartesian.from_collection(center) + Cartesian.from_collection(size) // 2
+        elif start is not None and center is not None:
+            size = 2 * (Cartesian.from_collection(center) - Cartesian.from_collection(start))
+            stop = start + size
     bbox = BoundingBox(start, stop)
     task = get_initial_task()
     task['bbox'] = bbox
@@ -89,8 +104,11 @@ def create_bbox(start: tuple, stop: tuple, size: tuple):
               type=click.INT, nargs=3, default=None, callback=default_none,
               help='size of region of interest')
 @click.option('--chunk-size', '-c',
-              type=click.INT, default=None, nargs=3,
+              type=click.INT, nargs=3, default=None, callback=default_none,
               help='(z y x), size/shape of chunks')
+@click.option('--chunk-overlap', '-o',
+              type=click.INT, nargs=3, default=None, callback=default_none,
+              help='(z y x), chunk overlap in each dimension')
 @click.option('--bounding-box', '-b', type=str, default=None,
     help='the string representation of a bounding box')
 @click.option('--grid-size', '-g',
