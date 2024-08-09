@@ -415,6 +415,7 @@ ends with {cutout_stop}, size is {cutout_size}, voxel size is {voxel_size}.""")
             print(yellow(f'deleting existing file: {file_name}'))
             os.remove(file_name)
 
+        os.makedirs(os.path.dirname(file_name), exist_ok=True)
         with h5py.File(file_name, 'w') as f:
             f.create_dataset('/main', data=self.array, chunks=chunk_size, compression=compression)
             if voxel_size is None and self.voxel_size is not None:

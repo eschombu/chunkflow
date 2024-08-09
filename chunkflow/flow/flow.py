@@ -311,6 +311,7 @@ def mark_complete(tasks, prefix: str, suffix: str):
         if task is not None:
             bbox = task['bbox']
             fname = f'{prefix}{bbox.string}{suffix}'
+            os.makedirs(os.path.dirname(fname), exist_ok=True)
             Path(fname).touch()
         yield task
 
@@ -343,6 +344,7 @@ def skip_all_zero(tasks, input_chunk_name: str, prefix: str, suffix: str, adjust
                     fname = f'{prefix}{bbox.string}{suffix}'
                     if not os.path.exists(fname):
                         print(f'create an empty file as mark: {fname}')
+                        os.makedirs(os.path.dirname(fname), exist_ok=True)
                         Path(fname).touch()
                 # target task as None and task will be skipped
                 task = None
@@ -369,6 +371,7 @@ def skip_none(tasks: dict, input_name: str, touch: bool, prefix: str, suffix: st
                     assert suffix is not None
                     bbox = task['bbox']
                     fname = f'{prefix}{bbox.string}{suffix}'
+                    os.makedirs(os.path.dirname(fname), exist_ok=True)
                     Path(fname).touch()
         yield task
 
@@ -812,6 +815,7 @@ def save_synapses(tasks, input_name: str, file_path: str):
                             file_path += bbox.string
                     file_path += '.h5'
                 if syns is None:
+                    os.makedirs(os.path.dirname(file_path), exist_ok=True)
                     Path(file_path).touch()
                 else:
                     syns.to_h5(file_path)
@@ -1161,10 +1165,13 @@ def save_h5(tasks, input_name: str, file_name: str, chunk_size: tuple,
     for task in tasks:
         if task is not None:
             data = task[input_name]
+            if not file_name.endswith('.h5'):
+                if isinstance(data, Chunk):
+                    bbox = data.bbox
+                else:
+                    bbox = task['bbox']
+                file_name = f'{file_name}{bbox.string}.h5'
             if isinstance(data, Chunk):
-                if not file_name.endswith('.h5'):
-                    file_name = f'{file_name}{data.bbox.string}.h5'
-
                 if dtype is not None:
                     data = data.astype(dtype)
                 data.to_h5(
@@ -1176,12 +1183,10 @@ def save_h5(tasks, input_name: str, file_name: str, chunk_size: tuple,
                 data.to_h5(file_name)
             elif data is None:
                 if touch:
-                    if not file_name.endswith('.h5'):
-                        bbox = task['bbox']
-                        file_name = f'{file_name}{bbox.string}.h5'
+                    os.makedirs(os.path.dirname(file_name), exist_ok=True)
                     Path(file_name).touch()
             else:
-                raise ValueError(f'unsuported type of input data: {data}')
+                raise ValueError(f'unsupported type of input data: {data}')
         yield task
 
 
