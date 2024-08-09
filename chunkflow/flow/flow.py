@@ -999,21 +999,26 @@ def load_tif(tasks, name: str, file_name: str, voxel_offset: tuple,
 @click.option('--input-chunk-name', '-i',
               type=str, default=DEFAULT_CHUNK_NAME, help='input chunk name')
 @click.option('--file-name', '-f', default=None,
-    type=click.Path(dir_okay=False, resolve_path=True), 
+    type=click.Path(dir_okay=False, resolve_path=True),
     help='file name of tif file, the extention should be .tif or .tiff')
+@click.option('--file-dir', '-d', default=None,
+    type=click.Path(file_okay=False, resolve_path=True),
+    help='directory name in which to store tiff file(s).')
 @click.option('--dtype', '-t', type=click.Choice(['uint8', 'uint16', 'uint32', 'uint64', 'float32', 'float64']),
     default=None, help='convert to this data type.')
 @click.option('--compression', '-c', 
     type=click.Choice(['', 'zlib', 'lzw', 'lzma', 'delta', 'packints', 'jpeg']),
     default='zlib', help='encoders that supported by tifffile')
+@click.option('--two-dim/--no-two-dim', default=False,
+              help='Write separate images for each slice in z.')
 @operator
-def save_tif(tasks, input_chunk_name: str, file_name: str, dtype: str, compression: str):
+def save_tif(tasks, input_chunk_name: str, file_name: str, file_dir: str, dtype: str, compression: str, two_dim: bool):
     """Save chunk as a TIF file."""
     for task in tasks:
         if task is not None:
             chunk = task[input_chunk_name]
             chunk = chunk.astype(dtype)
-            chunk.to_tif(file_name, compression=compression)
+            chunk.to_tif(file_name, file_dir, compression=compression, two_dim=two_dim)
         yield task
 
 

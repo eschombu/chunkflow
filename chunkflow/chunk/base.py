@@ -232,10 +232,11 @@ class Chunk(NDArrayOperatorsMixin):
         print(f'read tif chunk with size of {arr.shape}, voxel offset: {voxel_offset}, voxel size: {voxel_size}')
         return cls(arr, voxel_offset=voxel_offset, voxel_size=voxel_size)
     
-    def to_tif(self, file_name: str=None, compression: str = 'zlib'):
+    def to_tif(self, file_name: str = None, file_dir: str = None, compression: str = 'zlib', two_dim=False):
         if file_name is None:
             file_name = f'{self.bbox.string}.tif'
-        print(f'write chunk to file: {file_name}')
+        if file_dir is not None:
+            file_name = os.path.join(file_dir, file_name)
 
         if self.array.dtype==np.float32:
             # visualization in float32 is not working correctly in ImageJ
@@ -250,15 +251,43 @@ class Chunk(NDArrayOperatorsMixin):
             axes = 'ZYX'
         elif self.ndim == 4:
             axes = 'CZYX'
+        else:
+            raise RuntimeError(f'Unsupported chunk dimensionality: {self.ndim}')
         metadata = {'spacing': 1, 'unit': 'nm', 'axes': axes}
-        tifffile.imwrite(
-            file_name, data=img, 
-            volumetric = True,
-            # resolution=self.voxel_size.tuple, 
-            # imagej=True,
-            metadata = metadata,
-            compression = compression,
-        )
+
+        os.makedirs(os.path.dirname(file_name), exist_ok=True)
+        if two_dim:
+            max_idx = self.shape[0] if self.ndim == 3 else self.shape[1]
+            ndigits = len(str(max_idx))
+            print(f"write chunk to {max_idx} files: {file_name.replace('.tif', '_*.tif')}")
+            if self.ndim == 3:
+                metadata['axes'] = 'YX'
+                for idx in range(max_idx):
+                    tifffile.imwrite(
+                        file_name.replace('.tif', f'_{idx:0{ndigits}}.tif'),
+                        data=img[idx, :, :],
+                        metadata=metadata,
+                        compression=compression,
+                    )
+            else:
+                metadata['axes'] = 'CYX'
+                for idx in range(max_idx):
+                    tifffile.imwrite(
+                        file_name.replace('.tif', f'_{idx:0{ndigits}}.tif'),
+                        data=img[:, idx, :, :],
+                        metadata=metadata,
+                        compression=compression,
+                    )
+        else:
+            print(f'write chunk to file: {file_name}')
+            tifffile.imwrite(
+                file_name, data=img,
+                volumetric = True,
+                # resolution=self.voxel_size.tuple,
+                # imagej=True,
+                metadata = metadata,
+                compression = compression,
+            )
 
     @classmethod
     def from_h5(cls, file_name: str,
