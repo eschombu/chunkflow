@@ -320,6 +320,7 @@ class Synapses():
         """
         assert fname.endswith(".h5") or fname.endswith(".hdf5")
         print(f'save synapses to {fname}')
+        os.makedirs(os.path.dirname(fname), exist_ok=True)
         with h5py.File(fname, "w") as hf:
             
             hf['pre'] = self.pre
