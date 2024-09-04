@@ -530,10 +530,12 @@ def create_info(tasks, input_chunk_name: str, volume_path: str, channel_num: int
                 chunk = task[input_chunk_name]
                 if chunk.ndim == 3:
                     channel_num = 1
-                    volume_size = chunk.shape
+                    if volume_size is None:
+                        volume_size = chunk.shape
                 elif chunk.ndim == 4:
                     channel_num = chunk.shape[0]
-                    volume_size = chunk.shape[1:]
+                    if volume_size is None:
+                        volume_size = chunk.shape[1:]
                 else:
                     raise ValueError('chunk dimension can only be 3 or 4')
 
