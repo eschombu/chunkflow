@@ -16,6 +16,18 @@ def split_commands(lines: str) -> List[str]:
 def parse_file(file_path: str) -> List[ChunkflowCommandSequence]:
     with open(file_path, 'r') as f:
         lines = split_commands(f.read())
+
+    # Replace `source <file>` with the contents of the file
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if line.startswith('source '):
+            source_file = line.split(' ', maxsplit=1)[1]
+            with open(source_file, 'r') as f:
+                source_lines = split_commands(f.read())
+            lines = lines[:i] + source_lines + lines[(i + 1):]
+        i += 1
+
     if not any(line.startswith('chunkflow') for line in lines):
         lines = ['chunkflow'] + lines
 
