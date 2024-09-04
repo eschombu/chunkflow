@@ -21,7 +21,8 @@ class LoadPrecomputedOperator(OperatorBase):
                  use_https: bool = False,
                  dry_run: bool = False,
                  verbose: bool = False,
-                 name: str = 'cutout'):
+                 name: str = 'cutout',
+                 green_threads: bool = True):
         super().__init__(name=name)
         self.volume_path = volume_path
         self.mip = mip
@@ -29,6 +30,7 @@ class LoadPrecomputedOperator(OperatorBase):
         self.validate_mip = validate_mip
         self.blackout_sections = blackout_sections
         self.dry_run = dry_run
+        self.green_threads = green_threads
        
         if blackout_sections:
             stor = CloudFiles(volume_path)
@@ -43,7 +45,7 @@ class LoadPrecomputedOperator(OperatorBase):
             mip=self.mip,
             cache=False,
             use_https=use_https,
-            green_threads=True)
+            green_threads=self.green_threads)
             #parallel=True,
         
     def __call__(self, bbox: BoundingBox):
@@ -127,7 +129,7 @@ class LoadPrecomputedOperator(OperatorBase):
                                    progress=False,
                                    mip=self.validate_mip,
                                    cache=False,
-                                   green_threads=True)
+                                   green_threads=self.green_threads)
 
 
         chunk_mip = self.mip
