@@ -290,12 +290,12 @@ class BoundingBox:
         return self.stop
 
     @cached_property
+    def shape(self):
+        return self.stop - self.start
+
+    @cached_property
     def slices(self):
-        return (
-            slice(self.start.z, self.stop.z),
-            slice(self.start.y, self.stop.y),
-            slice(self.start.x, self.stop.x),
-        )
+        return tuple(slice(x0, x1) for x0, x1 in zip(self.start, self.stop))
 
     @property
     def random_coordinate(self) -> Cartesian:
@@ -309,11 +309,7 @@ class BoundingBox:
         x = random.randrange(self.start.x, self.stop.x)
         return Cartesian(z, y, x)
 
-    @cached_property
-    def shape(self):
-        return self.stop - self.start
-
-    def decompose_to_aligned_block_bounding_boxes(self, 
+    def decompose_to_aligned_block_bounding_boxes(self,
             block_size: Cartesian, bounded: bool=True) -> BoundingBoxes:
         bboxes = BoundingBoxes()
         if bounded:
@@ -463,7 +459,9 @@ class BoundingBox:
         Returns:
             BoundingBoxes: a list of bounding boxes
         """
-        assert ignore_unaligned 
+        if not ignore_unaligned:
+            raise NotImplementedError('`ignore_unaligned=False` is not implemented yet.')
+
         if not isinstance(block_size, Cartesian):
             block_size = Cartesian.from_collection(block_size)
         
@@ -475,18 +473,10 @@ class BoundingBox:
                     bbox = BoundingBox.from_delta(Cartesian(z,y,x), block_size)
                     bboxes.append(bbox)
         return bboxes
-    
-    @cached_property
-    def slices(self):
-        return tuple(slice(x0, x1) for x0, x1 in zip(self.start, self.stop))
 
     @cached_property
     def cloud_volume_bbox_xyz(self):
         return Bbox.from_slices(self.slices[::-1])
-
-    @cached_property
-    def shape(self):
-        return self.stop - self.start
 
     @cached_property
     def left_neighbors(self):
