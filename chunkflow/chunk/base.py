@@ -672,18 +672,17 @@ ends with {cutout_stop}, size is {cutout_size}, voxel size is {voxel_size}.""")
         ]
         self.voxel_offset += Cartesian.from_collection(size[:3])
 
-    def transpose(self, only_array: bool=False):
-        """To-Do: support arbitrary axis transpose"""
-        new_array = self.array.transpose()
-        if not only_array and self.voxel_offset is not None:
-            voxel_offset = self.voxel_offset[::-1]
-        else:
-            voxel_offset = self.voxel_offset
-        
-        if not only_array and self.voxel_size is not None:
-            voxel_size = self.voxel_size[::-1]
-        else:
-            voxel_size = self.voxel_size
+    def transpose(self, axes=None, only_array: bool = False) -> 'Chunk':
+        if axes is None:
+            axes = np.arange(self.array.ndim)[::-1]
+        new_array = np.transpose(self.array, axes=axes)
+        voxel_offset = self.voxel_offset
+        voxel_size = self.voxel_size
+        if not only_array:
+            if voxel_offset is not None:
+                voxel_offset = Cartesian.from_collection([voxel_offset[i] for i in axes])
+            if voxel_size is not None:
+                voxel_size = Cartesian.from_collection([voxel_size[i] for i in axes])
         return Chunk(new_array, voxel_offset=voxel_offset, voxel_size=voxel_size)
 
     def fill(self, x):

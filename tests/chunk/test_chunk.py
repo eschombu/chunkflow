@@ -2,7 +2,7 @@ from chunkflow.lib.cartesian_coordinate import BoundingBox
 import numpy as np
 import unittest
 
-from chunkflow.lib.cartesian_coordinate import BoundingBox
+from chunkflow.lib.cartesian_coordinate import BoundingBox, Cartesian
 from chunkflow.chunk import Chunk
 
 
@@ -130,6 +130,14 @@ class Test3DChunk(unittest.TestCase):
         self.assertEqual(chunk2.shape, self.chunk.shape[::-1])
         self.assertEqual(chunk2.voxel_offset, self.chunk.voxel_offset[::-1])
         self.assertTrue( np.array_equal(chunk2.array, np.transpose(self.chunk.array)  ))
+
+        axes = (0, 2, 1)
+        chunk2 = self.chunk.transpose(axes)
+        print('type of chunk after transpose: {}'.format(type(chunk2)))
+        self.assertIsInstance(chunk2, Chunk)
+        self.assertEqual(chunk2.shape, tuple(self.chunk.shape[i] for i in axes))
+        self.assertEqual(chunk2.voxel_offset, Cartesian.from_collection([self.chunk.voxel_offset[i] for i in axes]))
+        self.assertTrue( np.array_equal(chunk2.array, np.transpose(self.chunk.array, axes)  ))
 
         #chunk2 = np.ascontiguousarray(chunk2)
         #self.assertIsInstance(chunk2, Chunk)
