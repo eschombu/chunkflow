@@ -52,6 +52,7 @@ from .view import ViewOperator
 
 # print(f'importing modules takes {time() - ping} seconds.')
 
+
 @main.command('create-bbox')
 @click.option('--start', '-s', 
     type=click.INT, default=None, nargs=3,
@@ -65,24 +66,30 @@ from .view import ViewOperator
 @click.option('--size', '-z', 
     type=click.INT, default=None, nargs=3, callback=default_none,
     help='volume size or dimension.')
+@click.option('--string',
+    type=click.STRING, default=None, callback=default_none,
+    help='BoundingBox string.')
 @generator
-def create_bbox(start: tuple, stop: tuple, center: tuple, size: tuple):
-    vars = [start, stop, center, size]
-    assert sum([v is not None for v in vars]) == 2, 'Only two of start, stop, center, and size should be provided.'
-    if start is None:
-        if stop is not None and size is not None:
-            start = Cartesian.from_collection(stop) - Cartesian.from_collection(size)
-        elif center is not None and size is not None:
-            start = Cartesian.from_collection(center) - Cartesian.from_collection(size) // 2
-    if stop is None:
-        if start is not None and size is not None:
-            stop = Cartesian.from_collection(start) + Cartesian.from_collection(size)
-        elif center is not None and size is not None:
-            stop = Cartesian.from_collection(center) + Cartesian.from_collection(size) // 2
-        elif start is not None and center is not None:
-            size = 2 * (Cartesian.from_collection(center) - Cartesian.from_collection(start))
-            stop = start + size
-    bbox = BoundingBox(start, stop)
+def create_bbox(start: tuple, stop: tuple, center: tuple, size: tuple, string: str):
+    if string is not None:
+        bbox = BoundingBox.from_string(string)
+    else:
+        assert sum(v is not None for v in [start, stop, center, size]) == 2, \
+            'Only two of start, stop, center, and size should be provided.'
+        if start is None:
+            if stop is not None and size is not None:
+                start = Cartesian.from_collection(stop) - Cartesian.from_collection(size)
+            elif center is not None and size is not None:
+                start = Cartesian.from_collection(center) - Cartesian.from_collection(size) // 2
+        if stop is None:
+            if start is not None and size is not None:
+                stop = Cartesian.from_collection(start) + Cartesian.from_collection(size)
+            elif center is not None and size is not None:
+                stop = Cartesian.from_collection(center) + Cartesian.from_collection(size) // 2
+            elif start is not None and center is not None:
+                size = 2 * (Cartesian.from_collection(center) - Cartesian.from_collection(start))
+                stop = start + size
+        bbox = BoundingBox(start, stop)
     task = get_initial_task()
     task['bbox'] = bbox
     yield task
