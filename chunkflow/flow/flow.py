@@ -1196,17 +1196,20 @@ def save_h5(tasks, input_name: str, file_name: str, chunk_size: tuple,
 @click.option('--name', type=str, default='save-pngs', help='name of operator')
 @click.option('--input-chunk-name', '-i',
               type=str, default=DEFAULT_CHUNK_NAME, help='input chunk name')
+@click.option('--axis', type=int, default=0, help='axis along which to save image slices.')
 @click.option('--dtype', '-t', type=click.Choice(['uint8', 'uint16']), 
     default='uint8', help='data type. only support uint8 and uint16')
 @click.option('--output-path', '-o',
               type=str, default='./pngs/', help='output path of saved 2d images formated as png.')
 @operator
-def save_pngs(tasks, name, input_chunk_name, dtype, output_path):
+def save_pngs(tasks, name, axis, input_chunk_name, dtype, output_path):
     """Save as 2D PNG images."""
     operator = SavePNGsOperator(
-        output_path=output_path, 
-        dtype=dtype)
-
+        output_path=output_path,
+        axis=axis,
+        dtype=dtype,
+        name=name,
+    )
     for task in tasks:
         if task is not None:
             operator(task[input_chunk_name])
