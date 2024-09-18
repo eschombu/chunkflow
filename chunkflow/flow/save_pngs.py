@@ -14,6 +14,7 @@ from chunkflow.chunk import Chunk
 class SavePNGsOperator(OperatorBase):
     def __init__(self,
                  output_path: str = './pngs/',
+                 axis: int = 0,
                  dtype: str = 'uint8',
                  name: str = 'save-pngs'):
         super().__init__(name=name)
@@ -22,11 +23,18 @@ class SavePNGsOperator(OperatorBase):
             warn(f'output path do not exist, will create %s {output_path}')
             os.makedirs(output_path)
 
+        if axis not in (0, 1, 2):
+            raise ValueError(f'axis should be 0, 1, or 2, but got {self.axis}')
+        self.axis = axis
         self.dtype = np.dtype(dtype)
         self.output_path = output_path
 
     def __call__(self, chunk: Chunk):
         assert isinstance(chunk, Chunk)
+        if self.axis == 1:
+            chunk = chunk.transpose((1, 0, 2))
+        elif self.axis == 2:
+            chunk = chunk.transpose((2, 0, 1))
         if not np.issubdtype(chunk.dtype, self.dtype):
             chunk = chunk.astype(self.dtype)
 
