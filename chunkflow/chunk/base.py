@@ -399,6 +399,7 @@ ends with {cutout_stop}, size is {cutout_size}, voxel size is {voxel_size}.""")
         """
         :param file_name: output file name. If it is not end with h5, the coordinate will be appended to the file name.
         :param with_offset: save the voxel offset or not
+        :param chunk_size: HDF5 chunked storage block size. Default is (8,8,8).
         :param with_unique: if this is a segmentation chunk, save the unique object ids or not.
         :param compression: use HDF5 compression or not. Options are gzip, lzf
         """
@@ -644,7 +645,7 @@ ends with {cutout_stop}, size is {cutout_size}, voxel size is {voxel_size}.""")
         else:
             return self
         
-    def ascontiguousarray(self):
+    def ascontiguousarray(self) -> 'Chunk':
         new_array = np.ascontiguousarray(self.array)
         return Chunk(new_array, voxel_offset=self.voxel_offset, voxel_size=self.voxel_size)
 
@@ -688,7 +689,7 @@ ends with {cutout_stop}, size is {cutout_size}, voxel size is {voxel_size}.""")
     def fill(self, x):
         self.array.fill(x)
 
-    def squeeze_channel(self, axis: int = 0) -> np.ndarray:
+    def squeeze_channel(self, axis: int = 0) -> 'Chunk':
         """given a 4D array, squeeze the channel axis."""
         assert self.array.ndim == 4
         new_array = np.squeeze(self, axis=axis)
@@ -708,17 +709,13 @@ ends with {cutout_stop}, size is {cutout_size}, voxel size is {voxel_size}.""")
             layer_type='segmentation',
         )
 
-    def mask_using_last_channel(self, threshold: float = 0.3) -> np.ndarray:
+    def mask_using_last_channel(self, threshold: float = 0.3) -> 'Chunk':
         mask = (self.array[-1, :, :, :] < threshold)
         ret = self.array[:-1, ...]
         ret *= mask
         return Chunk(ret, voxel_offset=self.voxel_offset, voxel_size=self.voxel_size)
 
-    def crop_margin(
-            self, 
-            margin_size: tuple = None, 
-            output_bbox: BoundingBox=None
-        ):
+    def crop_margin(self, margin_size: tuple = None, output_bbox: BoundingBox=None) -> 'Chunk':
         """_summary_
 
         Args:
@@ -751,7 +748,7 @@ ends with {cutout_stop}, size is {cutout_size}, voxel size is {voxel_size}.""")
             assert output_bbox is not None
             return self.cutout(output_bbox.slices)
     
-    def threshold(self, threshold: float):
+    def threshold(self, threshold: float) -> 'Chunk':
         array = self.array > threshold
         if array.ndim == 4:
             assert array.shape[0] == 1
@@ -784,7 +781,7 @@ ends with {cutout_stop}, size is {cutout_size}, voxel size is {voxel_size}.""")
         overlap_slices = self._get_overlap_slices(other.slices)
         self.array[overlap_slices] += other.array[overlap_slices]
 
-    def cutout(self, x: Union[tuple, BoundingBox, Bbox]):
+    def cutout(self, x: Union[tuple, BoundingBox, Bbox]) -> 'Chunk':
         """
         cutout a region of interest from this chunk
 
