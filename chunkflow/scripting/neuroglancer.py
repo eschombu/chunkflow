@@ -79,20 +79,30 @@ def main():
     parser.add_argument('--h5', type=str, nargs='*', help='Path(s) to HDF5 file(s). (Alias for --hdf5)')
     parser.add_argument('--tiff', type=str, nargs='*', help='Path(s) to TIFF file(s).')
     parser.add_argument('--png', type=str, nargs='*', help='Path(s) to PNG file(s).')
-    parser.add_argument('--start', type=int, nargs=3, default=None, help='Chunk start coordinates (zyx).')
-    parser.add_argument('--size', type=int, nargs=3, default=None, help='Chunk size (zyx).')
     parser.add_argument('--infer-off', action='store_true', help='Disable automatic chunk inference.')
+
+    bbox_coord_args = ['start', 'stop', 'center', 'size']
+    for arg in bbox_coord_args:
+        parser.add_argument(f'--{arg}', type=int, nargs=3, default=None, help=f'Chunk {arg} coordinates.')
+    parser.add_argument('--xyz', action='store_true')
+    parser.add_argument('--bbox', type=str, default=None, help=f'BoundingBox string.')
+
     args = parser.parse_args()
 
     cmds = ['chunkflow']
 
-    chunk_args = [args.start, args.size]
-    if any(arg is not None for arg in chunk_args):
-        if not all(arg is not None for arg in chunk_args):
-            raise ValueError('Both start and size must be provided if either is provided.')
-        start = ' '.join(str(x) for x in args.start)
-        size = ' '.join(str(x) for x in args.size)
-        cmds.append(f'generate-tasks --roi-start {start} --chunk-size {size}')
+    bbox_arg_vals = []
+    for arg in bbox_coord_args:
+        arg_coords = getattr(args, arg)
+        if arg_coords:
+            if args.xyz:
+                arg_coords = arg_coords[::-1]
+            coords_str = ' '.join(str(x) for x in arg_coords)
+            bbox_arg_vals.append(f'--{arg} {coords_str}')
+    if args.bbox:
+        bbox_arg_vals.append(f'--string {args.bbox}')
+    if bbox_arg_vals:
+        cmds.append('create-bbox ' + ' '.join(bbox_arg_vals))
 
     infer_chunk = not args.infer_off
 
@@ -115,7 +125,7 @@ def main():
         path, var_name = _parse_file_vars(file)
         vars.append(var_name)
         cmds.append(_load_precomputed(path, var_name, infer_chunk=infer_chunk))
-    for file in (args.hdf5 or [] + args.h5 or []):
+    for file in ((args.hdf5 or []) + (args.h5 or [])):
         path, var_name = _parse_file_vars(file)
         vars.append(var_name)
         cmds.append(_load_hdf5(path, var_name, infer_chunk=infer_chunk))
