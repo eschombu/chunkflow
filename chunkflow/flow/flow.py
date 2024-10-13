@@ -242,12 +242,12 @@ def adjust_bbox(tasks, corner_offset: tuple):
 @click.option('--prefix', '-p', required=True, type=str,
     help='the pre part of result file path')
 @click.option('--suffix', '-s', default='', type=str,
-    help='the post part of result file path. Normally include file extention.')
+    help='the post part of result file path. Normally include file extension.')
 @click.option('--mode', '-m', 
     type=click.Choice(['missing', 'empty', 'exist']), default='exist',
     help='skip this task if the corresponding file is missing/empty/exists')
 @click.option('--adjust-size', '-a', default=None, type=click.INT, callback=default_none,
-    help='expand or shrink the bounding box. Currently, cloud-volume Bbox only support symetric grow.')
+    help='expand or shrink the bounding box. Currently, cloud-volume Bbox only support symmetric grow.')
 @operator
 def skip_task_by_file(tasks: Generator, prefix: str, suffix: str, 
         mode: str, adjust_size: int):
@@ -672,14 +672,14 @@ def aggregate_skeleton_fragments(tasks, name, input_name, prefix, fragments_path
     if output_path is None:
         output_path = fragments_path
 
-    operator = AggregateSkeletonFragmentsOperator(fragments_path, output_path)
+    skel_op = AggregateSkeletonFragmentsOperator(fragments_path, output_path)
     if prefix:
-        operator(prefix)
+        skel_op(prefix)
     else:
         for task in tasks:
             if task is not None:
                 start = time()
-                operator(task[input_name])
+                skel_op(task[input_name])
                 task['log']['timer'][name] = time() - start
             yield task
 
@@ -1211,7 +1211,7 @@ def save_h5(tasks, input_name: str, file_name: str, chunk_size: tuple,
 @operator
 def save_pngs(tasks, name, axis, input_chunk_name, dtype, output_path):
     """Save as 2D PNG images."""
-    operator = SavePNGsOperator(
+    save_op = SavePNGsOperator(
         output_path=output_path,
         axis=axis,
         dtype=dtype,
@@ -1219,7 +1219,7 @@ def save_pngs(tasks, name, axis, input_chunk_name, dtype, output_path):
     )
     for task in tasks:
         if task is not None:
-            operator(task[input_chunk_name])
+            save_op(task[input_chunk_name])
         yield task
 
 
@@ -1300,7 +1300,7 @@ def load_precomputed(tasks, name: str, volume_path: str, mip: int, expand_margin
         mip = state['mip']
     assert mip >= 0
 
-    operator = LoadPrecomputedOperator(
+    load_op = LoadPrecomputedOperator(
         volume_path,
         mip=mip,
         fill_missing=fill_missing,
@@ -1319,12 +1319,12 @@ def load_precomputed(tasks, name: str, volume_path: str, mip: int, expand_margin
             else:
                 # use bounding box of volume
                 if chunk_start is None:
-                    chunk_start = operator.vol.mip_bounds(mip).minpt[::-1]
+                    chunk_start = load_op.vol.mip_bounds(mip).minpt[::-1]
                 else:
                     chunk_start = Vec(*chunk_start)
 
                 if chunk_size is None:
-                    chunk_stop = operator.vol.mip_bounds(mip).maxpt[::-1]
+                    chunk_stop = load_op.vol.mip_bounds(mip).maxpt[::-1]
                     chunk_size = chunk_stop - chunk_start
                 else:
                     chunk_size = Vec(*chunk_size)
@@ -1335,7 +1335,7 @@ def load_precomputed(tasks, name: str, volume_path: str, mip: int, expand_margin
 
             start = time()
             # assert output_chunk_name not in task
-            task[output_chunk_name] = operator(bbox)
+            task[output_chunk_name] = load_op(bbox)
             task['log']['timer'][name] = time() - start
             task['cutout_volume_path'] = volume_path
         yield task
@@ -1652,7 +1652,7 @@ def downsample_upload(tasks, name, input_chunk_name, volume_path,
     if chunk_mip is None:
         chunk_mip = state['mip']
 
-    operator = DownsampleUploadOperator(
+    downsample_op = DownsampleUploadOperator(
         volume_path,
         factor=factor,
         chunk_mip=chunk_mip,
@@ -1664,7 +1664,7 @@ def downsample_upload(tasks, name, input_chunk_name, volume_path,
     for task in tasks:
         if task is not None:
             start = time()
-            operator(task[input_chunk_name])
+            downsample_op(task[input_chunk_name])
             task['log']['timer'][name] = time() - start
         yield task
 
@@ -1826,7 +1826,7 @@ def plugin(tasks, name: str, input_names: str, output_names: str, file: str, arg
     The custom python file should contain a callable named "exec" such that 
     a call of `exec(chunk, args)` can be made to operate on the chunk.
     """
-    operator = Plugin(file, name=name)
+    plugin_op = Plugin.from_file(file, name=name)
 
     for task in tasks:
         if task is not None:
@@ -1841,7 +1841,7 @@ def plugin(tasks, name: str, input_names: str, output_names: str, file: str, arg
                         inputs.append(task[input_name])
             else:
                 inputs = []
-            outputs = operator(inputs, args=args)
+            outputs = plugin_op(inputs, args=args)
             if isinstance(outputs, list) or isinstance(outputs, tuple): 
                 output_name_list = output_names.split(',')
                 assert len(outputs) == len(output_name_list)
@@ -2039,13 +2039,13 @@ def mask(tasks, name, input_names: str, output_suffix: str, volume_path: str,
     """Mask the chunk. The mask could be in higher mip level and we
     will automatically upsample it to the same mip level with chunk.
     """
-    operator = MaskOperator(volume_path,
-                            mip,
-                            state['mip'],
-                            inverse=inverse,
-                            fill_missing=fill_missing,
-                            inplace=inplace,
-                            name=name)
+    mask_op = MaskOperator(volume_path,
+                           mip,
+                           state['mip'],
+                           inverse=inverse,
+                           fill_missing=fill_missing,
+                           inplace=inplace,
+                           name=name)
 
     input_names = input_names.split(',')
     if inplace:
@@ -2064,9 +2064,9 @@ def mask(tasks, name, input_names: str, output_suffix: str, volume_path: str,
                 chunks.append(task[input_name])
 
             if inplace:
-                operator(chunks)
+                mask_op(chunks)
             else:
-                chunks = operator(chunks)
+                chunks = mask_op(chunks)
 
             for output_name, chunk in zip(output_names, chunks):    
                 task[output_name] = chunk
@@ -2179,7 +2179,7 @@ def mesh(tasks, name, input_chunk_name, mip, voxel_size, output_path, output_for
     if skip_ids is not None:
         skip_ids = frozenset(map(int, skip_ids.split(',')))
 
-    operator = MeshOperator(
+    mesh_op = MeshOperator(
         output_path,
         output_format,
         mip=mip,
@@ -2194,7 +2194,7 @@ def mesh(tasks, name, input_chunk_name, mip, voxel_size, output_path, output_for
     for task in tasks:
         if task is not None:
             start = time()
-            operator( task[input_chunk_name] )
+            mesh_op( task[input_chunk_name] )
             task['log']['timer'][name] = time() - start
         yield task
 
@@ -2209,16 +2209,16 @@ def mesh(tasks, name, input_chunk_name, mip, voxel_size, output_path, output_for
 def mesh_manifest(prefix: str, 
         disbatch: bool, digits: int, volume_path: str):
     """Generate mesh manifest files."""
-    operator = MeshManifestOperator(volume_path)
+    mesh_op = MeshManifestOperator(volume_path)
     if prefix:
-        operator(prefix, digits)
+        mesh_op(prefix, digits)
     elif disbatch:
             assert 'DISBATCH_REPEAT_INDEX' in os.environ
             prefix = os.environ['DISBATCH_REPEAT_INDEX']
-            operator(prefix, digits)
+            mesh_op(prefix, digits)
     else:
         for prefix in range(10**digits):
-            operator(prefix, digits)
+            mesh_op(prefix, digits)
     yield None
 
 
@@ -2285,11 +2285,11 @@ def download_mesh(tasks, volume_path: str, input: str, start_rank: int,
 @operator
 def napari(tasks, name, voxel_size, inputs):
     """Visualize the chunk using neuroglancer."""
-    operator = NapariOperator(
+    napari_op = NapariOperator(
         name=name, voxel_size=voxel_size)
     for task in tasks:
         if task is not None:
-            operator(task, selected=inputs)
+            napari_op(task, selected=inputs)
         yield task
 
 
@@ -2307,10 +2307,10 @@ def napari(tasks, name, voxel_size, inputs):
 @operator
 def neuroglancer(tasks, name, voxel_size, port, inputs, ignore_missing):
     """Visualize the chunk using neuroglancer."""
-    operator = NeuroglancerOperator(name=name, port=port, voxel_size=voxel_size)
+    ng_op = NeuroglancerOperator(name=name, port=port, voxel_size=voxel_size)
     for task in tasks:
         if task is not None:
-            operator(task, selected=inputs, ignore_missing=ignore_missing)
+            ng_op(task, selected=inputs, ignore_missing=ignore_missing)
         yield task
 
 
@@ -2370,7 +2370,7 @@ def save_precomputed(tasks, name: str, volume_path: str,
     if mip is None:
         mip = state['mip']
 
-    operator = SavePrecomputedOperator(
+    save_op = SavePrecomputedOperator(
         volume_path,
         mip,
         upload_log=upload_log,
@@ -2388,7 +2388,7 @@ def save_precomputed(tasks, name: str, volume_path: str,
                 print(f'average intensity lower than threshold, skip this task.')
                 pass
             else:
-                operator(chunk, log=task.get('log', {'timer': {}}))
+                save_op(chunk, log=task.get('log', {'timer': {}}))
                 # task['output_volume_path'] = volume_path
 
         yield task
@@ -2442,10 +2442,10 @@ def channel_voting(tasks, input_chunk_name, output_chunk_name):
 @operator
 def view(tasks, name, image_chunk_name, segmentation_chunk_name):
     """Visualize the chunk using cloudvolume view in browser."""
-    operator = ViewOperator(name=name)
+    view_op = ViewOperator(name=name)
     for task in tasks:
         if task is not None:
-            operator(task[image_chunk_name],
+            view_op(task[image_chunk_name],
                         seg=segmentation_chunk_name)
         yield task
 
