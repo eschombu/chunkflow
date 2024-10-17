@@ -1,5 +1,5 @@
 from ast import literal_eval
-from typing import Optional
+from typing import List, Optional
 
 import numpy as np
 

@@ -89,6 +89,58 @@ def test_bounding_box():
     assert bbox_decomp[0].start == minpt
     assert bbox_decomp[-1].stop == maxpt
 
+    minpt = Cartesian(0,0,0)
+    maxpt = Cartesian(13,13,13)
+    bbox = BoundingBox(minpt, maxpt)
+    bbox_decomp = bbox.decompose(Cartesian(4,4,4), overlap=Cartesian(1,1,1))
+    assert len(bbox_decomp) == 4 ** 3
+    assert bbox_decomp[0].start == minpt
+    assert bbox_decomp[-1].stop == maxpt
+
+    bbox_decomp = bbox.decompose(Cartesian(4,4,4), overlap=Cartesian(1,1,1), ignore_unaligned=False)
+    assert len(bbox_decomp) == 5 ** 3
+    assert bbox_decomp[0].start == minpt
+    assert bbox_decomp[-1].stop == maxpt + Cartesian(3,3,3)
+
+    minpt = Cartesian(1,2,3)
+    maxpt = Cartesian(4,5,6)
+    bbox = BoundingBox(minpt, maxpt)
+    neighbor_bboxes = bbox.left_neighbors
+    expected_neighbors = [
+        BoundingBox(Cartesian(-2,2,3), Cartesian(1,5,6)),
+        BoundingBox(Cartesian(1,-1,3), Cartesian(4,2,6)),
+        BoundingBox(Cartesian(1,2,0), Cartesian(4,5,3)),
+    ]
+    assert set(neighbor_bboxes) == set(expected_neighbors)
+
+    minpt = Cartesian(1, 2, 3)
+    maxpt = Cartesian(4, 5, 6)
+    bbox = BoundingBox(minpt, maxpt)
+    neighbor_bboxes = bbox.get_neighbors(connectivity=18)
+    assert len(neighbor_bboxes) == 18
+    assert bbox not in neighbor_bboxes
+    assert len(set(neighbor_bboxes)) == len(neighbor_bboxes)
+
+    neighbor_bboxes = bbox.get_neighbors(connectivity=26)
+    assert len(neighbor_bboxes) == 26
+    assert bbox not in neighbor_bboxes
+    assert len(set(neighbor_bboxes)) == len(neighbor_bboxes)
+
+    minpt = Cartesian(1,1,1)
+    maxpt = Cartesian(3,3,3)
+    bbox = BoundingBox(minpt, maxpt)
+    neighbor_bboxes = bbox.get_neighbors(connectivity=6, overlap=Cartesian(1,1,1))
+    expected_neighbors = [
+        BoundingBox(Cartesian(0,1,1), Cartesian(2,3,3)),
+        BoundingBox(Cartesian(1,0,1), Cartesian(3,2,3)),
+        BoundingBox(Cartesian(1,1,0), Cartesian(3,3,2)),
+        BoundingBox(Cartesian(1,1,2), Cartesian(3,3,4)),
+        BoundingBox(Cartesian(1,2,1), Cartesian(3,4,3)),
+        BoundingBox(Cartesian(2,1,1), Cartesian(4,3,3)),
+    ]
+    assert set(neighbor_bboxes) == set(expected_neighbors)
+    assert all(bbox.intersection(neighbor).size == 4 for neighbor in neighbor_bboxes)
+
 
 def test_bounding_boxes():
     fname = os.path.join(os.path.dirname(__file__), 'sp3_bboxes.txt')

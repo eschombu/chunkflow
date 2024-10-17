@@ -89,7 +89,7 @@ class Segmentation(Chunk):
         print(f'masking out {len(fragment_ids)} fragments in {len(uniq)} with a percentage of {len(fragment_ids)/len(uniq)}')
         self.array = fastremap.mask(self.array, fragment_ids)
 
-    def mask_except(self, selected_obj_ids: Union[str, list, set]):
+    def mask_except(self, selected_obj_ids: Union[str, list, set], count_selection_effect=False):
         if selected_obj_ids is None:
             print('we have not selected any objects to mask out.')
             return
@@ -105,6 +105,11 @@ class Segmentation(Chunk):
             # a simple string, like "34,45,56,23"
             # this is used for small object numbers
             selected_obj_ids = set([int(id) for id in selected_obj_ids.split(',')])
-        
-        self.array = fastremap.mask_except(self.array, list(selected_obj_ids))
+            print(f"selecting objects: {', '.join(str(s) for s in selected_obj_ids)}")
 
+        if count_selection_effect:
+            num_before = len(fastremap.unique(self.array))
+        self.array = fastremap.mask_except(self.array, list(selected_obj_ids))
+        if count_selection_effect:
+            num_after = len(fastremap.unique(self.array))
+            print(f'{num_before} objects before masking, {num_after} objects after masking')

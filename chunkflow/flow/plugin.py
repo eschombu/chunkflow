@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import os
-import os.path as path
-from typing import Union
+from typing import Callable, Union
 
 import numpy as np
 
@@ -30,36 +29,45 @@ class Plugin(OperatorBase):
     r"""
     Chunk operation using a custom python file.
     """
-    def __init__(self, plugin_file_name: str,
-                 name: str = 'plugin-1'):
-        r"""
-        Loads a custom python file specified in `opprogram`, which 
-        should contain a callable named "exec" such that 
-        a call of `op_call(chunk, args)` operates on the chunk.
-        """
+    def __init__(self, f: Callable, name: str = 'plugin-1'):
         super().__init__(name=name)
+        self.execute = f
 
-        if not plugin_file_name.endswith('.py'):
-            plugin_file_name += '.py'
+    @classmethod
+    def from_file(cls, plugin_file_name: str, name: str = 'plugin-1'):
+        r"""
+        Loads a custom python file specified in `plugin_file_name`, which
+        should contain a callable f such that a call of `f(chunk, args)`
+        operates on the chunk. The callable's name can be specified using
+        the format <plugin_file_name>::<callable>, with 'execute' as the
+        default name.
+        """
+        file_name, func_name = plugin_file_name.rsplit('::', maxsplit=1)
+        if func_name is None:
+            func_name = 'execute'
 
-        plugin_dir = path.join(path.dirname(path.realpath(__file__)), '../plugins')
-        plugin_dir1 =path.join(plugin_dir, 'chunkflow-plugins/chunkflowplugins')
+        if not file_name.endswith('.py'):
+            file_name += '.py'
+
+        plugin_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), '../plugins')
+        plugin_dir1 =os.path.join(plugin_dir, 'chunkflow-plugins/chunkflowplugins')
 
         plugin_dirs = ['./', plugin_dir, plugin_dir1]
         if 'CHUNKFLOW_PLUGIN_DIR' in os.environ:
             plugin_dirs.append(os.environ['CHUNKFLOW_PLUGIN_DIR'])
 
         for plugin_dir in plugin_dirs:
-            fname = path.join(plugin_dir, plugin_file_name)
-            if path.exists(fname):
-                print(f'loading plugin {fname}')
+            fname = os.path.join(plugin_dir, file_name)
+            if os.path.exists(fname):
+                print(f'loading plugin {fname}::{func_name}')
                 program = load_source(fname)
-                # assuming this is a func / static functor for now, maybe make it a class?
-                self.execute = program.execute
-                break
+                # NOTE: assuming this is a func / static functor for now, maybe make it a class?
+                assert hasattr(program, func_name), f'plugin {file_name} does not have a function named {func_name}'
+                plugin_exec = getattr(program, func_name)
+                return cls(plugin_exec, name)
 
-        assert os.path.exists(fname), f'did not find plugin: {fname}'
-        assert hasattr(self, 'execute')
+        # if we reach here, the plugin was not found
+        raise RuntimeError(f'did not find plugin: {file_name}')
 
     def __call__(self, inputs: list, args: str = None):
         voxel_offset = None

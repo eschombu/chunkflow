@@ -1,18 +1,17 @@
 # support the class method with parameter type of itself
 from __future__ import annotations
 
-import random
 
-import os
-from collections import UserList, namedtuple
-from math import ceil, floor
-from typing import Union, List
-from numbers import Number
 import itertools
-from functools import cached_property
+import os
+import random
 import re
+from collections import UserList, namedtuple
 from dataclasses import dataclass
-from copy import deepcopy
+from functools import cached_property
+from math import ceil, floor
+from numbers import Number
+from typing import List, Optional, Self, Union
 
 import numpy as np
 import h5py
@@ -23,12 +22,31 @@ from cloudvolume.lib import Vec, Bbox
 BOUNDING_BOX_RE = re.compile(r'(-?\d+)-(-?\d+)_(-?\d+)-(-?\d+)_(-?\d+)-(-?\d+)(?:\.gz|\.br|\.h5|\.json|\.npy|\.tif|\.csv|\.pkl|\.png|\.jpg)?$')
 
 
-def to_cartesian(x: Union[tuple, list, None]):
+def to_cartesian(x: Union[tuple, list, None]) -> Optional[Cartesian]:
     if x is None:
         return None
+    elif isinstance(x, Cartesian):
+        return x
     else:
         assert len(x) == 3
         return Cartesian.from_collection(x)
+
+
+def get_connectivity_directions(connectivity: int) -> List[Direction]:
+    if connectivity == 6:
+        neighbors = []
+        for i in range(3):
+            for d in (-1, 1):
+                n = [0, 0, 0]
+                n[i] = d
+                neighbors.append(n)
+    elif connectivity == 18:
+        neighbors = filter(lambda c: not (abs(c[0]) == abs(c[1]) == abs(c[2])), itertools.product((-1, 0, 1), repeat=3))
+    elif connectivity == 26:
+        neighbors = filter(lambda c: c != (0, 0, 0), itertools.product((-1, 0, 1), repeat=3))
+    else:
+        raise ValueError('connectivity must equal 6, 18, or 26')
+    return list(map(Direction.from_collection, neighbors))
 
 
 class Cartesian(namedtuple('Cartesian', ['z', 'y', 'x'])):
@@ -36,9 +54,12 @@ class Cartesian(namedtuple('Cartesian', ['z', 'y', 'x'])):
     __slots__ = ()
 
     @classmethod
-    def from_collection(cls, col: Union[tuple, list, Vec]):
+    def from_collection(cls, col: Union[tuple, list, Vec]) -> Self:
         assert len(col) == 3
         return cls(*col)
+
+    def copy(self):
+        return Cartesian(self.z, self.y, self.x)
 
     @property
     def ceil(self):
@@ -187,6 +208,19 @@ class Cartesian(namedtuple('Cartesian', ['z', 'y', 'x'])):
         return Cartesian(self.x, self.y, self.z)
 
 
+class Direction(Cartesian):
+    def __new__(cls, *args, **kwargs):
+        zyx = super().__new__(cls, *args, **kwargs).tuple
+        allowed = (-1, 0, 1)
+        if not all(v in allowed for v in zyx):
+            raise ValueError(f'invalid direction: {zyx}')
+        return super().__new__(cls, *map(int, zyx))
+
+    @cached_property
+    def magnitude(self) -> int:
+        return sum(abs(x) for x in self)
+
+
 @dataclass(frozen=True)
 class BoundingBox:
     start: Cartesian
@@ -266,6 +300,9 @@ class BoundingBox:
             stop += 1
         return cls(start, stop)
 
+    def copy(self) -> BoundingBox:
+        return BoundingBox(self.start.copy(), self.stop.copy())
+
     @cached_property
     def dvid_roi(self):
         return [self.start.tuple, self.stop.tuple]
@@ -290,8 +327,19 @@ class BoundingBox:
         return self.stop
 
     @cached_property
+    def center(self) -> Cartesian:
+        return (self.start + self.stop) / 2
+
+    @cached_property
     def shape(self):
         return self.stop - self.start
+
+    @cached_property
+    def size(self) -> Number:
+        if any(x < 0 for x in self.shape):
+            return 0
+        else:
+            return np.prod(self.shape)
 
     @cached_property
     def slices(self):
@@ -370,10 +418,7 @@ class BoundingBox:
         return self // other
 
     def inverse_order(self):
-        return BoundingBox(
-            self.start.inverse, 
-            self.stop.inverse
-        )
+        return BoundingBox(self.start.inverse, self.stop.inverse)
 
     def __add__(self, other: Cartesian | Number):
         start = self.start + other
@@ -383,6 +428,16 @@ class BoundingBox:
     def __iadd__(self, other: Cartesian | Number):
         start = self.start + other
         stop = self.stop + other
+        return BoundingBox(start, stop)
+
+    def __sub__(self, other: Cartesian | Number):
+        start = self.start - other
+        stop = self.stop - other
+        return BoundingBox(start, stop)
+
+    def __isub__(self, other: Cartesian | Number):
+        start = self.start - other
+        stop = self.stop - other
         return BoundingBox(start, stop)
 
     def clone(self):
@@ -441,34 +496,46 @@ class BoundingBox:
         stop  = Cartesian.from_collection(maxpt)
         return BoundingBox(start, stop)
 
+    def overlaps(self, bbox2: BoundingBox):
+        return np.all(self.minpt <= bbox2.maxpt) and np.all(self.maxpt > bbox2.minpt)
+
     def contains(self, point: Union[tuple, Vec, list]):
         assert 3 == len(point)
         return np.all(np.asarray(
             (self.maxpt >= Vec(*point)))) and np.all(
-                np.asarray((self.minpt <= Vec(*point)))) 
+                np.asarray((self.minpt <= Vec(*point))))
 
-    def decompose(self, block_size: Cartesian, 
-            ignore_unaligned: bool = True) -> BoundingBoxes:
+    def contains_bbox(self, bbox2: BoundingBox):
+        return np.all(self.minpt <= bbox2.minpt) and np.all(self.maxpt >= bbox2.maxpt)
+
+    def decompose(self, block_size: Cartesian,
+            overlap: Cartesian = Cartesian(0, 0, 0), ignore_unaligned: bool = True) -> BoundingBoxes:
         """decompose the bounding box to a list of bounding boxes
         If there exist some space that can not fit in a whole block, it will be 
         ignored! 
 
         Args:
             block_size (Cartesian): the decomposed block size.
+            overlap (Cartesian): the decomposed block overlap.
+            ignore_unaligned (bool): whether to ignore the unaligned block or not.
 
         Returns:
             BoundingBoxes: a list of bounding boxes
         """
-        assert ignore_unaligned 
         if not isinstance(block_size, Cartesian):
             block_size = Cartesian.from_collection(block_size)
-        
-        bboxes = BoundingBoxes()
+        if not isinstance(overlap, Cartesian):
+            overlap = Cartesian.from_collection(overlap)
 
-        for z in range(self.start.z, self.stop.z-block_size.z+1, block_size.z):
-            for y in range(self.start.y, self.stop.y-block_size.y+1, block_size.y):
-                for x in range(self.start.x, self.stop.x-block_size.x+1, block_size.x):
-                    bbox = BoundingBox.from_delta(Cartesian(z,y,x), block_size)
+        bboxes = BoundingBoxes()
+        if ignore_unaligned:
+            range_stop = self.stop - block_size + 1
+        else:
+            range_stop = (((self.stop - self.start) / block_size).ceil - 1) * block_size + self.start + 1
+        for z in range(self.start.z, range_stop.z, block_size.z - overlap.z):
+            for y in range(self.start.y, range_stop.y, block_size.y - overlap.y):
+                for x in range(self.start.x, range_stop.x, block_size.x - overlap.x):
+                    bbox = BoundingBox.from_delta(Cartesian(z, y, x), block_size)
                     bboxes.append(bbox)
         return bboxes
 
@@ -478,20 +545,33 @@ class BoundingBox:
 
     @cached_property
     def left_neighbors(self):
-        sz = self.shape
+        left_dirs = [(-1, 0, 0), (0, -1, 0), (0, 0, -1)]
+        return tuple(self.get_neighbors(directions=left_dirs))
 
-        minpt = deepcopy(self.minpt)
-        minpt[0] -= sz[0]
-        bbox_z = self.from_delta(minpt, sz)
+    def get_neighbors(self,
+            connectivity: int = 26,
+            directions: Optional[List[Direction]] = None,
+            overlap: Cartesian = Cartesian(0, 0, 0)
+    ) -> List[BoundingBox]:
+        """get the neighbors of this bounding box
 
-        minpt = deepcopy(self.minpt)
-        minpt[1] -= sz[1]
-        bbox_y = self.from_delta(minpt, sz) 
+        Args:
+            connectivity (int, optional): the connectivity of the neighbors. Defaults to 26.
 
-        minpt = deepcopy(self.minpt)
-        minpt[2] -= sz[2]
-        bbox_x = self.from_delta(minpt, sz)
-        return bbox_z, bbox_y, bbox_x
+        Returns:
+            List[BoundingBox]: a list of neighbors
+        """
+        overlap = to_cartesian(overlap)
+        if directions is None:
+            directions = get_connectivity_directions(connectivity)
+        neighbors = []
+        for d in directions:
+            if not isinstance(d, Direction):
+                d = Direction.from_collection(d)
+            minpt = self.minpt + (self.shape - overlap) * d
+            bbox = self.__class__.from_delta(minpt, self.shape)
+            neighbors.append(bbox)
+        return neighbors
     
     def is_aligned_with(self, block_shape: Union[tuple, Cartesian]) -> bool:
         """whether the bounding box is aligned with block size or not
@@ -562,7 +642,7 @@ class BoundingBoxes(UserList):
                 dataset_size = Cartesian.from_collection(dataset_size)
                 dataset_offset = Cartesian.from_collection(dataset_offset)
 
-                if roi_size is None:
+                if roi_size is None and (roi_start is None or roi_stop is None):
                     roi_size = dataset_size
                 if roi_stop is None:
                     roi_stop = dataset_offset + dataset_size
@@ -579,12 +659,14 @@ class BoundingBoxes(UserList):
         if not isinstance(roi_start, Cartesian):
             assert len(roi_start) == 3
             roi_start = Cartesian(*roi_start)
-        if not isinstance(roi_size, Cartesian):
-            roi_size = Cartesian(*roi_size)
         if grid_size is not None and not isinstance(grid_size, Cartesian):
             grid_size = Cartesian(*grid_size)
         if not isinstance(roi_stop, Cartesian):
             roi_stop = Cartesian(*roi_stop)
+        if roi_size is None:
+            roi_size = roi_stop - roi_start
+        elif not isinstance(roi_size, Cartesian):
+            roi_size = Cartesian(*roi_size)
 
         stride = chunk_size - chunk_overlap
         if roi_stop is None:
@@ -636,9 +718,9 @@ class BoundingBoxes(UserList):
             chunk_start = roi_start + Cartesian(gz, gy, gx) * stride
             bbox = BoundingBox.from_delta(chunk_start, chunk_size)
             if not respect_chunk_size:
-                bbox.maxpt = np.minimum(bbox.maxpt, Vec(*roi_stop))
+                bbox = BoundingBox(bbox.minpt, np.minimum(bbox.maxpt, Vec(*roi_stop)))
             if not bounded or np.all(tuple(m < p for m, p in zip(bbox.maxpt, roi_stop))):
-                bboxes.append( bbox )
+                bboxes.append(bbox)
 
         print(f'get {len(bboxes)} bounding boxes as tasks.')
         print(f'center chunk index: {center_index} with bounding box: {bboxes[center_index].string}')
@@ -684,6 +766,14 @@ class BoundingBoxes(UserList):
 
     def __len__(self):
         return len(self.data)
+
+    @property
+    def minpt(self) -> Cartesian:
+        return Cartesian.from_collection(self.array[:,:3].min(axis=0))
+
+    @property
+    def maxpt(self) -> Cartesian:
+        return Cartesian.from_collection(self.array[:,3:].max(axis=0))
 
 
 @dataclass(frozen=True)

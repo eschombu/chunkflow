@@ -29,6 +29,8 @@ def write_msg_to_log(log, msg):
     if log is not None:
         with open(log, 'a') as f:
             f.write(msg + '\n')
+    else:
+        print(msg)
 
 
 def main():

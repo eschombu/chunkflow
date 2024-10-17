@@ -2086,9 +2086,11 @@ def mask(tasks, name, input_names: str, output_suffix: str, volume_path: str,
                The ids should be separated by comma without space, such as "34,56,78,90"
                it can also be a json file contains a list of ids. The json file path should
                contain protocols, such as "gs://bucket/my/json/file/path.""")
+@click.option('--verbose/--no-verbose', default=False,
+              help='print effect of masking on number of objects.')
 @operator
 def mask_out_objects(tasks, input_chunk_name, output_chunk_name,
-                     dust_size_threshold: int, selected_obj_ids: List[int]):
+                     dust_size_threshold: int, selected_obj_ids: List[int], verbose: bool):
     """Mask out objects in a segmentation chunk."""
     if isinstance(selected_obj_ids, str) and selected_obj_ids.endswith('.json'):
         # assume that ids is a json file in the storage path
@@ -2108,7 +2110,7 @@ def mask_out_objects(tasks, input_chunk_name, output_chunk_name,
             if dust_size_threshold is not None:
                 seg.mask_fragments(dust_size_threshold)
             if selected_obj_ids is not None:
-                seg.mask_except(selected_obj_ids)
+                seg.mask_except(selected_obj_ids, count_selection_effect=verbose)
 
             task[output_chunk_name] = seg
         yield task

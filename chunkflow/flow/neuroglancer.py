@@ -281,8 +281,16 @@ void main() {
     def _append_probability_map_layer(self,
             viewer_state: ng.viewer_state.ViewerState,
             chunk_name: str, chunk: Chunk, color=None):
+
+        chunk = chunk.copy()
+
         if chunk.dtype == np.dtype('<f4') or chunk.dtype == np.dtype('float16'):
             chunk = chunk.astype(np.float32)
+        elif chunk.dtype == np.uint8:
+            chunk = chunk.astype(np.float32) / 255
+
+        if chunk.ndim == 3:
+            chunk.array = chunk.array[np.newaxis]
 
         voxel_size = self._get_voxel_size(chunk)
         # chunk = np.ascontiguousarray(chunk)
@@ -331,7 +339,7 @@ emitRGB(vec3(toNormalized(getDataValue(0)),
             shader=shader
         )
 
-    def __call__(self, datas: dict, selected: str=None, ignore_missing=False):
+    def __call__(self, datas: dict, selected: str = None, ignore_missing=False):
         """
         Parameters:
         chunks: multiple chunks
@@ -342,7 +350,7 @@ emitRGB(vec3(toNormalized(getDataValue(0)),
                 if not varname.endswith(']'):
                     raise ValueError(f"Unmatched bracket in variable name: '{varname}'")
                 varname, opts = varname[:-1].split('[')
-                for arg in opts.split(','):
+                for arg in opts.split(';'):
                     if '=' in arg:
                         k, v = arg.split('=')
                         kws[k] = v
@@ -356,7 +364,10 @@ emitRGB(vec3(toNormalized(getDataValue(0)),
         if selected is None:
             selected = datas.keys()
         elif isinstance(selected, str):
-            selected = selected.split(',')
+            if selected:
+                selected = selected.split(',')
+            else:
+                selected = []
 
         # ng.set_static_content_source(
         #     url='https://neuromancer-seung-import.appspot.com')
@@ -368,6 +379,7 @@ emitRGB(vec3(toNormalized(getDataValue(0)),
                 if name not in datas and ignore_missing:
                     continue
                 data = datas[name]
+                layer_type = layer_kwargs.pop('type', data.layer_type)
                 layer_args = (viewer_state, name, data)
                 # breakpoint()
                 
@@ -386,7 +398,7 @@ emitRGB(vec3(toNormalized(getDataValue(0)),
                     # points
                     self._append_point_annotation_layer(*layer_args, **layer_kwargs)
                 elif isinstance(data, Chunk):
-                    if data.layer_type is None:
+                    if layer_type is None:
                         if data.is_image:
                             self._append_image_layer(*layer_args, **layer_kwargs)
                         elif data.is_segmentation:
@@ -397,11 +409,11 @@ emitRGB(vec3(toNormalized(getDataValue(0)),
                             raise ValueError('affinity map is not working yet. To-Do.')
                         else:
                             raise ValueError('unsupported data type.')
-                    elif data.layer_type == 'segmentation':
+                    elif layer_type == 'segmentation':
                         self._append_segmentation_layer(*layer_args, **layer_kwargs)
-                    elif data.layer_type == 'probability_map':
+                    elif layer_type == 'probability_map':
                         self._append_probability_map_layer(*layer_args, **layer_kwargs)
-                    elif data.layer_type in set(['image', 'affinity_map']):
+                    elif layer_type in set(['image', 'affinity_map']):
                         self._append_image_layer(*layer_args, **layer_kwargs)
                     else: 
                         raise ValueError('only support image, affinity map, probability_map, and segmentation for now.')

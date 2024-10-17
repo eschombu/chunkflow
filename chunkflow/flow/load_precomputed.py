@@ -22,7 +22,7 @@ class LoadPrecomputedOperator(OperatorBase):
                  dry_run: bool = False,
                  verbose: bool = False,
                  name: str = 'cutout',
-                 green_threads: bool = True):
+                 green_threads: bool = False):
         super().__init__(name=name)
         self.volume_path = volume_path
         self.mip = mip

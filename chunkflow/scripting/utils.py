@@ -12,9 +12,13 @@ def split_lines(lines: str) -> List[str]:
     return lines
 
 
-def parse_sh_file(file_path: str) -> List[Command]:
+def parse_sh_file(file_path: str, arg_vars: str = None) -> List[Command]:
+    lines = []
+    if arg_vars is not None:
+        lines.extend(arg_vars.split(';'))
+
     with open(file_path, 'r') as f:
-        lines = split_lines(f.read())
+        lines.extend(split_lines(f.read()))
 
     # Replace `source <file>` with the contents of the file
     i = 0
@@ -40,9 +44,13 @@ def split_commands(lines: str) -> List[str]:
     return out
 
 
-def parse_cf_file(file_path: str) -> List[ChunkflowCommandSequence]:
+def parse_cf_file(file_path: str, arg_vars: str = None) -> List[ChunkflowCommandSequence]:
+    lines = []
+    if arg_vars is not None:
+        lines.extend(arg_vars.split(';'))
+
     with open(file_path, 'r') as f:
-        lines = split_commands(f.read())
+        lines.extend(split_commands(f.read()))
 
     # Replace `source <file>` with the contents of the file
     i = 0
@@ -71,8 +79,11 @@ def parse_cf_file(file_path: str) -> List[ChunkflowCommandSequence]:
         else:
             if current_cf_cmd is not None:
                 raise RuntimeError('All variable assignments must come before the first chunkflow command.')
-            name, value = line.split('=')
-            variables[name.strip()] = value.strip()
+            if line.startswith('export ') and '=' not in line:
+                variables[line.strip()] = None
+            else:
+                name, value = line.split('=')
+                variables[name.strip()] = value.strip()
     if current_cf_cmd is not None:
         chunkflow_seqs.append(ChunkflowCommandSequence(current_cf_cmd, variables))
 
@@ -81,13 +92,9 @@ def parse_cf_file(file_path: str) -> List[ChunkflowCommandSequence]:
 
 def parse_file(file_path: str, args: str = None) -> List[CommandBase]:
     if os.path.splitext(file_path)[-1] in {'.sh'}:
-        if args:
-            raise ValueError("Arguments are not supported for shell scripts")
-        return parse_sh_file(file_path)
+        return parse_sh_file(file_path, arg_vars=args)
     elif os.path.splitext(file_path)[-1] in {'.cf', '.chunkflow'}:
-        if args:
-            raise ValueError("Arguments are not supported for chunkflow scripts")
-        return parse_cf_file(file_path)
+        return parse_cf_file(file_path, arg_vars=args)
     elif os.path.splitext(file_path)[-1] in {'.py'}:
         command = f'python {file_path}'
         if args:
