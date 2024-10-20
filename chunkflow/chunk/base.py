@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Union, Optional
+from typing import Iterable, Optional, Self, Union
 import os
 import glob
 from numbers import Number
@@ -89,6 +89,17 @@ class Chunk(NDArrayOperatorsMixin):
                 self.layer_type = 'affinity_map'
             else:
                 self.layer_type = 'unknown'
+
+    def copy(self) -> Self:
+        return type(self)(
+            self.array.copy(),
+            voxel_offset=self.voxel_offset,
+            voxel_size=self.voxel_size,
+            layer_type=self.layer_type,
+        )
+
+    def clone(self) -> Self:
+        return self.copy()
 
     # One might also consider adding the built-in list type to this
     # list, to support operations like np.add(array_like, list)
@@ -197,13 +208,6 @@ class Chunk(NDArrayOperatorsMixin):
             raise NotImplementedError(f'do not support the pattern: {pattern}')
 
         return cls(arr, voxel_offset=voxel_offset, voxel_size=voxel_size)
-
-    def clone(self):
-        return Chunk(
-            self.array.copy(), 
-            voxel_offset=self.voxel_offset, 
-            voxel_size=self.voxel_size
-        )
     
     @classmethod
     def from_tif(cls, file_name: str, 
@@ -490,7 +494,13 @@ ends with {cutout_stop}, size is {cutout_size}, voxel size is {voxel_size}.""")
         self.array[key] = value
 
     def __repr__(self):
-        return f'array: {self.array}\n voxel offset: {self.voxel_offset} \n voxel size: {self.voxel_size}'
+        param_strs = '\n '.join([
+            f"layer type: '{self.layer_type}'",
+            f'array shape: {self.array.shape}',
+            f'voxel offset: {self.voxel_offset}',
+            f'voxel size: {self.voxel_size}',
+        ])
+        return f"Chunk:\n {param_strs}"
     
     def __eq__(self, value):
         if isinstance(value, type(self)):
