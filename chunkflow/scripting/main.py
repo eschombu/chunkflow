@@ -1,7 +1,11 @@
 import argparse
 import os
+import pdb
+import sys
+import traceback
 from datetime import datetime
 from glob import glob
+from subprocess import CalledProcessError
 
 from chunkflow.scripting.utils import parse_file, print_section_header
 
@@ -29,18 +33,11 @@ def write_msg_to_log(log, msg):
     if log is not None:
         with open(log, 'a') as f:
             f.write(msg + '\n')
+    else:
+        print(msg)
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('file', type=str, help='Path to file containing commands')
-    parser.add_argument('--args', type=str, default=None, help='Arguments to pass to the script')
-    parser.add_argument('--dryrun', action='store_true', help='Print commands without running')
-    parser.add_argument('--log', action='store_true', help='Append commands to log file')
-    parser.add_argument('--log-path', type=str, default=None, help='Path to log file')
-    parser.add_argument('--log-restart', action='store_true', help='Create a new log file')
-    args = parser.parse_args()
-
+def run(args):
     if args.log and int(os.environ.get('DISBATCH_REPEAT_INDEX', '-1')) <= 0:
         if args.log_restart:
             log = get_new_log_path()
@@ -64,9 +61,34 @@ def main():
         write_msg_to_log(log, cmd_seq.get_command())
         try:
             cmd_seq.run(dryrun=args.dryrun)
-            write_msg_to_log(log, '\n<<< SUCCEEDED\n')
+            write_msg_to_log(log, f'\n<<< SUCCEEDED [{get_timestamp()}]\n')
         except:
-            write_msg_to_log(log, '\n<<< FAILED\n')
+            write_msg_to_log(log, f'\n<<< FAILED [{get_timestamp()}]\n')
+            raise
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('file', type=str, help='Path to file containing commands')
+    parser.add_argument('--args', type=str, default=None, help='Arguments to pass to the script')
+    parser.add_argument('--dryrun', action='store_true', help='Print commands without running')
+    parser.add_argument('--log', action='store_true', help='Append commands to log file')
+    parser.add_argument('--log-path', type=str, default=None, help='Path to log file')
+    parser.add_argument('--log-restart', action='store_true', help='Create a new log file')
+    parser.add_argument('--debug', action='store_true')
+    args = parser.parse_args()
+
+    try:
+        run(args)
+    except (KeyboardInterrupt, pdb.bdb.BdbQuit):
+        sys.exit(1)
+    except CalledProcessError:
+        raise
+    except:
+        if args.debug:
+            traceback.print_exc()
+            pdb.post_mortem()
+        else:
             raise
 
 

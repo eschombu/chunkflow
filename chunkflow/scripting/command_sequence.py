@@ -11,7 +11,7 @@ class CommandBase(ABC):
     def run(self, print_cmd=True, dryrun=False) -> None:
         command = self.get_command()
         if print_cmd:
-            print(command, flush=True)
+            # print(command, flush=True)
             print('\n---------------- OUTPUT ----------------\n', flush=True)
         if dryrun:
             print('*** DRY RUN ***', flush=True)
@@ -42,10 +42,22 @@ class ChunkflowCommandSequence(CommandBase):
 
     def _filter_relevant_vars(self) -> dict:
         commands_str = '\n'.join(self.commands)
-        return {k: v for k, v in self.variables.items() if k in commands_str}
+        exports_str = '\n'.join(k for k in self.variables if k.startswith('export'))
+        vars_str = '\n'.join(filter(lambda v: v is not None, self.variables.values()))
+        return {k: v for k, v in self.variables.items()
+                if k in commands_str
+                or k in exports_str
+                or k in vars_str
+                or k.startswith('export')}
+
+    @staticmethod
+    def _make_var_str(k, v) -> str:
+        if v is None:
+            return k
+        return f'{k}={v}'
 
     def get_command(self) -> str:
-        var_assignments = '\n'.join(f'{k}={v}' for k, v in self._filter_relevant_vars().items())
+        var_assignments = '\n'.join(self._make_var_str(k, v) for k, v in self._filter_relevant_vars().items())
         command = ' \\\n    '.join(self.commands)
         if var_assignments:
             command = f'{var_assignments}\n{command}'
