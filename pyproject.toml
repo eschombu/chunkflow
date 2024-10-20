@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "chunkflow"
 version = "1.1.4"
@@ -67,9 +71,11 @@ repository = "https://github.com/seung-lab/chunkflow"
 changelog = "https://github.com/seung-lab/chunkflow/blob/master/CHANGELOG.md"
 
 [project.scripts]
-#chunkflow = "chunkflow.flow.flow:main"
+chunkflow = "chunkflow.flow.flow:main"
+chunkflow-script = "chunkflow.scripting.main:main"
+chunkflow-neuroglancer = "chunkflow.scripting.neuroglancer:main"
 
 [project.gui-scripts]
 
-[project.entry-points."spam.magical"]
-chunkflow = "chunkflow.flow.flow:main"
+[tool.setuptools]
+packages = ["chunkflow"]
