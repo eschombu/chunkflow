@@ -23,6 +23,7 @@ class SavePrecomputedOperator(OperatorBase):
                  upload_log: bool = True,
                  create_thumbnail: bool = False,
                  fill_missing: bool = False,
+                 green_threads: bool = False,
                  parallel: int = 1,
                  name: str = 'save-precomputed'):
         super().__init__(name=name)
@@ -43,7 +44,7 @@ class SavePrecomputedOperator(OperatorBase):
             autocrop=True,
             mip=self.mip,
             cache=False,
-            green_threads=True,
+            green_threads=green_threads,
             delete_black_uploads=True,
             parallel=parallel,
             progress=True)
