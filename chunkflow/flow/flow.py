@@ -21,8 +21,8 @@ from cloudfiles import CloudFiles
 
 from chunkflow.lib.aws.sqs_queue import SQSQueue
 from chunkflow.lib.cartesian_coordinate import Cartesian, BoundingBox, BoundingBoxes
-from chunkflow.lib.utils import infer_bbox
-from chunkflow.synapses import Synapses
+from chunkflow.lib.mito_segment_dev import label_segments, run_save_chunk_segmentation
+from chunkflow.lib.utils import infer_bbox, str_to_dict
 
 from chunkflow.chunk import Chunk
 from chunkflow.chunk.image import Image
@@ -30,6 +30,7 @@ from chunkflow.chunk.affinity_map import AffinityMap
 from chunkflow.chunk.segmentation import Segmentation
 from chunkflow.flow.divid_conquer.inferencer import Inferencer
 from chunkflow.point_cloud import PointCloud
+from chunkflow.synapses import Synapses
 from chunkflow.volume import PrecomputedVolume
 
 # import operator functions
@@ -2444,6 +2445,64 @@ def view(tasks, name, image_chunk_name, segmentation_chunk_name):
         if task is not None:
             view_op(task[image_chunk_name],
                         seg=segmentation_chunk_name)
+        yield task
+
+
+@main.command('mito-seg')
+@click.option('--name', type=str, default='mito-seg', help='name of this operator')
+@click.option('--input-names', '-i',
+              type=str, default=None, help='input names with delimiter of comma')
+@click.option('--args', '-a',
+              type=str, default=None,
+              help='arguments of plugin. keywords should be like: var1=3;var2=(1,2);var3=0.4')
+@operator
+def mito_seg(tasks, name, input_names, args):
+    """all channels vote to get a uint8 volume. The channel with max intensity wins."""
+    for task in tasks:
+        if input_names is not None:
+            input_name_list = input_names.split(',')
+            inputs = []
+            for input_name in input_name_list:
+                if input_name == 'None':
+                    inputs.append(None)
+                else:
+                    inputs.append(task[input_name])
+        else:
+            inputs = []
+        if args is not None and '=' in args:
+            args = str_to_dict(args)
+        run_save_chunk_segmentation(*inputs, **args)
+        yield task
+
+
+@main.command('mito-label')
+@click.option('--name', type=str, default='mito-seg', help='name of this operator')
+@click.option('--input-names', '-i',
+              type=str, default=None, help='input names with delimiter of comma')
+@click.option('--output-name', '-o',
+              type=str, default=None, help='output name')
+@click.option('--args', '-a',
+              type=str, default=None,
+              help='arguments of plugin. keywords should be like: var1=3;var2=(1,2);var3=0.4')
+@operator
+def mito_label(tasks, name, input_names, output_name, args):
+    """all channels vote to get a uint8 volume. The channel with max intensity wins."""
+    for task in tasks:
+        if input_names is not None:
+            input_name_list = input_names.split(',')
+            inputs = []
+            for input_name in input_name_list:
+                if input_name == 'None':
+                    inputs.append(None)
+                else:
+                    inputs.append(task[input_name])
+        else:
+            inputs = []
+        if args is not None and '=' in args:
+            args = str_to_dict(args)
+        out = label_segments(*inputs, **args)
+        if out is not None and output_name is not None:
+            task[output_name] = out
         yield task
 
 

@@ -1,4 +1,6 @@
 from ast import literal_eval
+from dataclasses import dataclass
+from multiprocessing import shared_memory
 from typing import List, Optional
 
 import numpy as np
@@ -35,3 +37,26 @@ def infer_bbox(
     if chunk_size is None:
         chunk_size = bbox_min_max[1] - bbox_min_max[0]
     return BoundingBox.from_delta(chunk_start, chunk_size)
+
+
+@dataclass
+class SharedMemoryContainer:
+    shared_mem: shared_memory.SharedMemory
+    shape: tuple
+    dtype: type
+
+    @classmethod
+    def create(cls, array: np.ndarray):
+        shared_mem = shared_memory.SharedMemory(create=True, size=array.nbytes)
+        shared_array = np.ndarray(array.shape, dtype=array.dtype, buffer=shared_mem.buf)
+        np.copyto(shared_array, array)
+        return cls(shared_mem, array.shape, array.dtype)
+
+    def load(self):
+        return np.ndarray(self.shape, dtype=self.dtype, buffer=self.shared_mem.buf)
+
+    def close(self):
+        self.shared_mem.close()
+
+    def unlink(self):
+        self.shared_mem.unlink()
