@@ -1,14 +1,15 @@
 #!/usr/bin/env python
 
+import json
 import os
+from collections import defaultdict
+from copy import deepcopy
 from pathlib import Path
 from time import time
 from typing import Generator, List, Tuple
-from copy import deepcopy
 
-import numpy as np
 import click
-import json
+import numpy as np
 from tqdm import tqdm
 
 import zarr
@@ -22,11 +23,11 @@ from cloudfiles import CloudFiles
 from chunkflow.lib.aws.sqs_queue import SQSQueue
 from chunkflow.lib.cartesian_coordinate import Cartesian, BoundingBox, BoundingBoxes
 from chunkflow.lib.mito_segment_dev import label_segments, run_save_chunk_segmentation
-from chunkflow.lib.utils import infer_bbox, str_to_dict
+from chunkflow.lib.utils import deterministic_shuffle, infer_bbox, str_to_dict
 
 from chunkflow.chunk import Chunk
-from chunkflow.chunk.image import Image
 from chunkflow.chunk.affinity_map import AffinityMap
+from chunkflow.chunk.image import Image
 from chunkflow.chunk.segmentation import Segmentation
 from chunkflow.flow.divid_conquer.inferencer import Inferencer
 from chunkflow.point_cloud import PointCloud
@@ -135,6 +136,8 @@ make the chunk size consistent or cut off at the stopping boundary.""")
               type=click.INT, default=0, help='starting index of task list.')
 @click.option('--task-index-stop', '-p',
               type=click.INT, default=None, help='stop index of task list.')
+@click.option('--shuffle/--no-shuffle', '-d',
+              default=False, help='shuffle chunk bboxes before generating tasks.')
 @click.option('--disbatch/--no-disbatch', '-d',
               default=False, help='use disBatch environment variable or not')
 @click.option('--use-https/--use-credential', default=False,
@@ -147,7 +150,7 @@ def generate_tasks(
         respect_chunk_size: bool, aligned_block_size: tuple,
         task_index_start: tuple, task_index_stop: tuple,
         file_path: str, queue_name: str,
-        disbatch: bool, use_https: bool):
+        disbatch: bool, shuffle: bool, use_https: bool):
     """Generate a batch of tasks."""
     if mip is None:
         mip = state['mip']
@@ -170,6 +173,9 @@ def generate_tasks(
             use_https=use_https
         )
     print(f'number of all the candidate tasks: {len(bboxes)}')
+    if shuffle:
+        print('shuffling the bounding boxes.')
+        bboxes = deterministic_shuffle(bboxes, key=lambda x: x.string)
     
     if task_index_start:
         if task_index_stop is None:
