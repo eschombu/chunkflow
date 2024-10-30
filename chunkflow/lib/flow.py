@@ -1,4 +1,6 @@
+import pdb
 import sys
+import traceback
 from typing import Union
 
 from functools import update_wrapper, wraps
@@ -49,34 +51,47 @@ def default_none(ctx, _, value):
               help='dry run or real run. default is real run.')
 @click.option('--verbose/--quiet', default=False, 
     help='show more information or not. default is False.')
-def main(mip, dry_run, verbose):
+@click.option('--debug/--no-debug', default=False,
+    help='drop into pdb.postmortem upon exception.')
+def main(mip, dry_run, verbose, debug):
     """Compose operators and create your own pipeline."""
     
     state['mip'] = mip
     state['dry_run'] = dry_run
     state['verbose'] = verbose
+    state['debug'] = debug
     if dry_run:
         print('\nYou are using dry-run mode, will not do the work!')
 
 
 @main.result_callback()
-def process_commands(operators, mip, dry_run, verbose):
+def process_commands(operators, mip, dry_run, verbose, debug):
     """This result callback is invoked with an iterable of all 
     the chained subcommands. As in this example each subcommand 
     returns a function we can chain them together to feed one 
     into the other, similar to how a pipe on unix works.
     """
-    # It turns out that a tuple will not work correctly!
-    stream = [get_initial_task(), ]
+    try:
+        # It turns out that a tuple will not work correctly!
+        stream = [get_initial_task(), ]
 
-    # Pipe it through all stream operators.
-    for operator in operators:
-        stream = operator(stream)
-        # task = next(stream)
+        # Pipe it through all stream operators.
+        for operator in operators:
+            stream = operator(stream)
+            # task = next(stream)
 
-    # Evaluate the stream and throw away the items.
-    for _ in stream:
-        pass
+        # Evaluate the stream and throw away the items.
+        for _ in stream:
+            pass
+    except (KeyboardInterrupt, pdb.bdb.BdbQuit):
+        sys.exit(1)
+    except Exception:
+        if debug:
+            traceback.print_exc()
+            pdb.post_mortem()
+        else:
+            raise
+
 
 
 def operator(func):
