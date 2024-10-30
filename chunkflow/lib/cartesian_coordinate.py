@@ -499,11 +499,11 @@ class BoundingBox:
     def overlaps(self, bbox2: BoundingBox):
         return np.all(self.minpt <= bbox2.maxpt) and np.all(self.maxpt > bbox2.minpt)
 
-    def contains(self, point: Union[tuple, Vec, list]):
+    def contains(self, point: Union[Cartesian, tuple, list]):
         assert 3 == len(point)
-        return np.all(np.asarray(
-            (self.maxpt >= Vec(*point)))) and np.all(
-                np.asarray((self.minpt <= Vec(*point))))
+        if not isinstance(point, Cartesian):
+            point = Cartesian.from_collection(point)
+        return self.minpt <= point <= self.maxpt
 
     def contains_bbox(self, bbox2: BoundingBox):
         return np.all(self.minpt <= bbox2.minpt) and np.all(self.maxpt >= bbox2.maxpt)

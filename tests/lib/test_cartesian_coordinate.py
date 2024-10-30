@@ -66,10 +66,13 @@ def test_bounding_box():
 
     minpt = Cartesian(1,2,3)
     maxpt = Cartesian(2,3,4)
+    midpt = (minpt + maxpt) / 2
     bbox = BoundingBox(minpt, maxpt)
     assert bbox.start == minpt
     assert bbox.stop == maxpt
     assert bbox.shape == Cartesian(1,1,1)
+    assert bbox.contains(midpt)
+
 
     bbox = BoundingBox.from_center(Cartesian(1,2,3), 3)
     assert bbox == BoundingBox.from_list([-2, -1, 0, 4, 5, 6])
