@@ -776,6 +776,8 @@ def label_segments(
         bbox: BoundingBox,
         seg_masks_dir: Union[str, Path],
         seg_id_map: Optional[Union[str, Dict[str, int]]] = None,
+        seg_neu_map: Optional[Union[str, Dict[int, int]]] = None,
+        require_neu_id=False,
         expand_margin: int = 0,
         crop_margin: int = 0,
         voxel_size: Cartesian = Cartesian(8, 8, 8),
@@ -806,20 +808,36 @@ def label_segments(
         if not os.path.exists(seg_id_map) and str(seg_masks_dir) not in seg_id_map:
             seg_id_map = seg_masks_dir / seg_id_map
         if not os.path.exists(seg_id_map):
-            raise ValueError(f'seg_id_map file not found: {seg_id_map}')
+            raise FileNotFoundError(seg_id_map)
+        print(f'Loading segment ID map from {seg_id_map}.')
         with open(seg_id_map) as f:
-            seg_id_map = json.load(f)
+            seg_id_map = {k: int(v) for k, v in json.load(f).items()}
 
-    seg_array = np.zeros(chunk_bbox.shape, dtype=np.uint64)
+    if seg_neu_map is None:
+        seg_neu_map = seg_masks_dir / 'seg_to_neu_map.json'
+    if not isinstance(seg_neu_map, dict):
+        seg_neu_map = str(seg_neu_map)
+    if isinstance(seg_neu_map, str):
+        if not os.path.exists(seg_neu_map) and str(seg_masks_dir) not in seg_neu_map:
+            seg_neu_map = seg_masks_dir / seg_neu_map
+        if not os.path.exists(seg_neu_map):
+            raise FileNotFoundError(seg_neu_map)
+        print(f'Loading segment to neuron ID map from {seg_neu_map}.')
+        with open(seg_neu_map) as f:
+            seg_neu_map = {int(k): int(v) for k, v in json.load(f).items()}
+
     if 'DISBATCH_REPEAT_INDEX' not in os.environ:
         mask_path_iter = tqdm(seg_mask_paths)
     else:
         mask_path_iter = seg_mask_paths
 
+    seg_array = np.zeros(chunk_bbox.shape, dtype=np.uint64)
     count = 0
     for path in mask_path_iter:
         seg_id = seg_id_map.get(mask_id_from_path(path))
         if seg_id:
+            if require_neu_id and seg_id not in seg_neu_map:
+                continue
             seg_mask = SegmentMask.load(path)
             mask_array = seg_mask.intersection(chunk_bbox).chunk_mask
             seg_array[mask_array] = np.uint64(seg_id)
