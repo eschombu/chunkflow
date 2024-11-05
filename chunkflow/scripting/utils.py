@@ -3,6 +3,8 @@ from typing import List
 
 from chunkflow.scripting.command_sequence import ChunkflowCommandSequence, Command, CommandBase
 
+RAW_SEP_LINE = '---'
+
 
 def split_lines(lines: str) -> List[str]:
     lines = [line.split('#', maxsplit=1)[0].rstrip() for line in lines.split('\n')]
@@ -66,26 +68,33 @@ def parse_cf_file(file_path: str, arg_vars: str = None) -> List[ChunkflowCommand
     if not any(line.startswith('chunkflow') for line in lines):
         lines = ['chunkflow'] + lines
 
+    if RAW_SEP_LINE in lines:
+        raw_lines = lines[:lines.index(RAW_SEP_LINE)]
+        lines = lines[(lines.index(RAW_SEP_LINE) + 1):]
+    else:
+        raw_lines = []
+
     variables = {}
     chunkflow_seqs = []
     current_cf_cmd = None
     for line in lines:
         if line.startswith('chunkflow'):
             if current_cf_cmd is not None:
-                chunkflow_seqs.append(ChunkflowCommandSequence(current_cf_cmd, variables))
+                chunkflow_seqs.append(ChunkflowCommandSequence(current_cf_cmd, variables, raw_lines))
+                raw_lines = []
             current_cf_cmd = [line]
         elif current_cf_cmd is not None:
             current_cf_cmd.append(line)
         else:
             if current_cf_cmd is not None:
                 raise RuntimeError('All variable assignments must come before the first chunkflow command.')
-            if line.startswith('export ') and '=' not in line:
+            if (line.startswith('export ') and '=' not in line) or line.startswith('echo '):
                 variables[line.strip()] = None
             else:
                 name, value = line.split('=')
                 variables[name.strip()] = value.strip()
     if current_cf_cmd is not None:
-        chunkflow_seqs.append(ChunkflowCommandSequence(current_cf_cmd, variables))
+        chunkflow_seqs.append(ChunkflowCommandSequence(current_cf_cmd, variables, raw_lines))
 
     return chunkflow_seqs
 

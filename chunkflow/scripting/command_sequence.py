@@ -29,7 +29,7 @@ class Command(CommandBase):
 
 
 class ChunkflowCommandSequence(CommandBase):
-    def __init__(self, commands: Union[str, Iterable[str]], variables: Optional[dict] = None):
+    def __init__(self, commands: Union[str, Iterable[str]], variables: Optional[dict] = None, raw_start_commands: Optional[Iterable[str]] = None):
         if isinstance(commands, str):
             commands = [commands]
         if not isinstance(commands, list):
@@ -37,18 +37,30 @@ class ChunkflowCommandSequence(CommandBase):
         assert len(commands) > 0
         if not commands[0].startswith('chunkflow'):
             commands = ['chunkflow'] + commands
+
+        if raw_start_commands is None:
+            raw_start_commands = []
+        elif isinstance(raw_start_commands, str):
+            raw_start_commands = [raw_start_commands]
+        if not isinstance(raw_start_commands, list):
+            raw_start_commands = list(raw_start_commands)
+
         self.commands = commands
         self.variables = variables or {}
+        self.raw_start_commands = raw_start_commands
 
     def _filter_relevant_vars(self) -> dict:
-        commands_str = '\n'.join(self.commands)
-        exports_str = '\n'.join(k for k in self.variables if k.startswith('export'))
+        commands_str = '\n'.join(self.raw_start_commands + self.commands)
+        exports_str = '\n'.join(k for k in self.variables if k.startswith('export') or k.startswith('echo'))
         vars_str = '\n'.join(filter(lambda v: v is not None, self.variables.values()))
-        return {k: v for k, v in self.variables.items()
-                if k in commands_str
-                or k in exports_str
-                or k in vars_str
-                or k.startswith('export')}
+        return {
+            k: v
+            for k, v in self.variables.items()
+            if k in commands_str
+            or k in exports_str
+            or k in vars_str
+            # or k.startswith('export')
+        }
 
     @staticmethod
     def _make_var_str(k, v) -> str:
@@ -61,4 +73,6 @@ class ChunkflowCommandSequence(CommandBase):
         command = ' \\\n    '.join(self.commands)
         if var_assignments:
             command = f'{var_assignments}\n{command}'
+        if self.raw_start_commands:
+            command = '\n'.join(self.raw_start_commands) + '\n' + command
         return command
