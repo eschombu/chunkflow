@@ -184,6 +184,13 @@ class SegmentMask:
                         key = f'overlap_info/{k}'
                         f.attrs[key] = v
 
+    @staticmethod
+    def load_attr(path: Union[str, Path], key: str, check_ext=True):
+        if check_ext and os.path.splitext(path)[-1] not in ('.h5', '.hdf5'):
+            raise ValueError(f'The file {path} is not an HDF5 file.')
+        with h5py.File(path, 'r') as f:
+            return f.attrs.get(key, None)
+
     @classmethod
     def load(cls, path: Union[str, Path], load_mask=True, check_ext=True):
         if check_ext and os.path.splitext(path)[-1] not in ('.h5', '.hdf5'):
