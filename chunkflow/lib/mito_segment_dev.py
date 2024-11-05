@@ -341,7 +341,7 @@ for p1 in FILENAME_PARTS:
             assert not p1.startswith(p2) and not p2.startswith(p1)
 
 
-def _file_dir_encode(d: Direction) -> str:
+def _encode_direction(d: Direction) -> str:
     s = ''
     for i in d:
         if i == 0:
@@ -353,7 +353,7 @@ def _file_dir_encode(d: Direction) -> str:
     return s
 
 
-def _file_dir_decode(s: str) -> Direction:
+def _decode_direction(s: str) -> Direction:
     d = []
     for c in s:
         if c == '0':
@@ -375,7 +375,7 @@ def get_filename(
     if margin is None:
         margin = seg_mask.margin
     neighbor_dirs = seg_mask.on_chunk_boundaries(margin=(margin * 2), threshold=boundary_threshold)
-    neighbor_str = '+'.join([_file_dir_encode(d) for d in neighbor_dirs]) if neighbor_dirs else None
+    neighbor_str = '+'.join([_encode_direction(d) for d in neighbor_dirs]) if neighbor_dirs else None
     folder = seg_mask.chunk_bbox.string
     parts = {
         'id': seg_mask.id,
@@ -389,11 +389,11 @@ def get_filename(
 
 
 def mask_id_from_path(path: Union[str, Path]) -> str:
-    return '/'.join(str(path).rsplit('/')[-2:])
+    return '/'.join(str(path).split('/')[-2:])
 
 
 def parse_filename(path: str) -> dict:
-    folder, filename = str(path).rsplit('/')[-2:]
+    folder, filename = str(path).split('/')[-2:]
     parsed = {'chunk': folder}
     name, ext = os.path.splitext(filename)
     parts = name.split(FILENAME_SEP)
@@ -408,7 +408,7 @@ def parse_filename(path: str) -> dict:
                     parsed_val = int(val)
                 except ValueError:
                     if key == 'neighbors':
-                        parsed_val = [_file_dir_decode(d) for d in val.split('+')]
+                        parsed_val = [_decode_direction(d) for d in val.split('+')]
                         parsed[key] = parsed_val
                         break
                     else:
