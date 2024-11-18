@@ -307,9 +307,13 @@ class SegmentMask:
         new_bbox_in_orig_chunk = new_bbox - self.chunk_bbox.start
         new_bbox_in_chunk = new_bbox - new_chunk_bbox.start
         new_mask = self.chunk_mask[*new_bbox_in_orig_chunk.slices]
+        new_size = new_mask.sum()
+        if new_size == 0:
+            return None
+
         return SegmentMask(
             id=self.id,
-            size=new_mask.sum(),
+            size=new_size,
             bbox=new_bbox,
             bbox_in_chunk=new_bbox_in_chunk,
             chunk_bbox=new_chunk_bbox,
