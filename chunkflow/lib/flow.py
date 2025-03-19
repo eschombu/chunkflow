@@ -95,28 +95,26 @@ def process_commands(operators, mip, dry_run, verbose, debug):
             raise
 
 
-
-def operator(func):
+def operator(f):
     """
     Help decorator to rewrite a function so that
     it returns another function from it.
     """
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        def operator(stream):
-            return func(stream, *args, **kwargs)
-        return operator
+    def new_func(*args, **kwargs):
+        def op(stream):
+            return f(stream, *args, **kwargs)
 
-    return wrapper
+        return update_wrapper(op, f)
+
+    return update_wrapper(new_func, f)
 
 
-def generator(func):
+def generator(f):
     """Similar to the :func:`operator` but passes through old values unchanged 
     and does not pass through the values as parameter.
     """
-    @operator
     def new_func(stream, *args, **kwargs):
-        for item in func(*args, **kwargs):
-            yield item
+        # yield from stream
+        yield from f(*args, **kwargs)
 
-    return update_wrapper(new_func, func)
+    return update_wrapper(operator(update_wrapper(new_func, f)), f)
