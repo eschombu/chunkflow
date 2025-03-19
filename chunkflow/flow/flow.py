@@ -140,8 +140,12 @@ make the chunk size consistent or cut off at the stopping boundary.""")
               type=click.INT, default=0, help='starting index of task list.')
 @click.option('--task-index-stop', '-p',
               type=click.INT, default=None, help='stop index of task list.')
+@click.option('--task-index-step',
+              type=click.INT, default=None, help='index step of task list.')
 @click.option('--shuffle/--no-shuffle', '-d',
               default=False, help='shuffle chunk bboxes before generating tasks.')
+@click.option('--reorder-step',
+    type=click.INT, default=None, help='step size of reordering')
 @click.option('--disbatch/--no-disbatch', '-d',
               default=False, help='use disBatch environment variable or not')
 @click.option('--use-https/--use-credential', default=False,
@@ -152,9 +156,9 @@ def generate_tasks(
         roi_size: tuple, chunk_size: tuple, chunk_overlap: tuple,
         bounding_box: str, grid_size: tuple,
         respect_chunk_size: bool, aligned_block_size: tuple,
-        task_index_start: tuple, task_index_stop: tuple,
-        file_path: str, queue_name: str,
-        disbatch: bool, shuffle: bool, use_https: bool):
+        task_index_start: int, task_index_stop: int, task_index_step: int,
+        shuffle: bool, reorder_step: int, disbatch: bool, use_https: bool,
+        file_path: str, queue_name: str):
     """Generate a batch of tasks."""
     if mip is None:
         mip = state['mip']
@@ -180,19 +184,21 @@ def generate_tasks(
     if shuffle:
         print('shuffling the bounding boxes.')
         bboxes = deterministic_shuffle(bboxes, key=lambda x: x.string)
-    
-    if task_index_start:
-        if task_index_stop is None:
-            # task_index_stop = task_index_start + 1
-            task_index_stop = len(bboxes)
-        bboxes = [*bboxes[task_index_start:task_index_stop]]
-        print(f'selected task indexes from {task_index_start} to {task_index_stop}')
-    elif disbatch:
+    elif reorder_step is not None:
+        idx_iter = (i + j for j in range(reorder_step) for i in range(0, len(bboxes), reorder_step) if (i + j) < len(bboxes))
+        bboxes = [bboxes[i] for i in idx_iter]
+
+    if disbatch:
         assert 'DISBATCH_REPEAT_INDEX' in os.environ
         disbatch_index = int(os.environ['DISBATCH_REPEAT_INDEX'])
         assert disbatch_index < len(bboxes), f'DISBATCH_REPEAT_INDEX is larger than the task number!'
         bboxes = [bboxes[disbatch_index],]
+        task_index_start = 0
         print(f'selected a task with disBatch index {disbatch_index}')
+    elif any(x for x in [task_index_start, task_index_stop, task_index_step]):
+        task_index_slice = slice(task_index_start, task_index_stop, task_index_step)
+        bboxes = bboxes[task_index_slice]
+        print(f'selected task indexes from {task_index_start} to {task_index_stop}')
         
     # write out as a file
     # this could be used for iteration in slurm cluster.
@@ -213,7 +219,8 @@ def generate_tasks(
             if disbatch:
                 assert len(bboxes) == 1
                 bbox_index = disbatch_index
-            print(f'executing task {bbox_index+task_index_start} in {bbox_num+task_index_start} with bounding box: {bbox.string}')
+            print(f'executing task {bbox_index + task_index_start} in {bbox_num + task_index_start} with bounding box: '
+                  f'{bbox.string}')
             task = get_initial_task()
             task['bbox'] = bbox
             task['bbox_index'] = bbox_index
