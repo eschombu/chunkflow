@@ -387,7 +387,7 @@ emitRGB(vec3(toNormalized(getDataValue(0)),
                 data = datas[name]
                 layer_type = layer_kwargs.pop('type', data.layer_type)
                 layer_args = (viewer_state, name, data)
-                breakpoint()
+                # breakpoint()
                 
                 if data is None:
                     continue
