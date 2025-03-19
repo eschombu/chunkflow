@@ -1,13 +1,13 @@
 import os
 
-
 import numpy as np
+import pyspng
+from itertools import repeat
+from tqdm import tqdm
+from tqdm.contrib.concurrent import process_map
 
 from chunkflow.lib.cartesian_coordinate import BoundingBox, Cartesian
 from chunkflow.chunk import Chunk
-
-from tqdm import tqdm
-import pyspng
 
 
 def load_png_image(file_name: str):
@@ -17,6 +17,12 @@ def load_png_image(file_name: str):
         arr = arr[:, :, 0]
     return arr
 
+def _par_load(file_name, bbox, dtype):
+    arr = load_png_image(file_name)
+    if arr.dtype != dtype:
+        arr = arr.astype(dtype)
+    return arr[bbox.start[1]:bbox.stop[1], bbox.start[2]:bbox.stop[2]]
+
 
 def load_png_images(
         path_prefix: str, 
@@ -25,7 +31,9 @@ def load_png_images(
         voxel_size: Cartesian = Cartesian(1, 1, 1),
         digit_num: int = 5,
         dtype: np.dtype = None,
-        layer_type: str = 'image'
+        layer_type: str = 'image',
+        workers: int = 1,
+        tqdm_chunksize: int = None,
 ):
     if isinstance(dtype, str):
         dtype = np.dtype(dtype)
@@ -67,14 +75,25 @@ def load_png_images(
         voxel_size=voxel_size,
     )
 
-    for z_offset, file_name in tqdm(enumerate(file_names)):
-        arr = load_png_image(file_name)
-        if arr.dtype != dtype:
-            arr = arr.astype(dtype)
+    # Use available CPU cores minus if workers is negative (minus n if workers == -(n+1))
+    if workers is not None and workers < 0:
+        workers = os.cpu_count() + 1 + workers
 
-        chunk.array[z_offset, :, :] = arr[
-            bbox.start[1]:bbox.stop[1],
-            bbox.start[2]:bbox.stop[2]]
+    tqdm_kws = dict(desc=f'Loading PNGs', total=len(file_names))
+    if workers and workers > 1:
+        if tqdm_chunksize is None and len(file_names) >= 1024:
+            tqdm_kws['chunksize'] = 32
+        arrs = process_map(_par_load, file_names, repeat(bbox), repeat(dtype), max_workers=workers, **tqdm_kws)
+        chunk.array = np.stack(arrs, axis=0)
+    else:
+        for z_offset, file_name in tqdm(enumerate(file_names), **tqdm_kws):
+            arr = load_png_image(file_name)
+            if arr.dtype != dtype:
+                arr = arr.astype(dtype)
+
+            chunk.array[z_offset, :, :] = arr[
+                bbox.start[1]:bbox.stop[1],
+                bbox.start[2]:bbox.stop[2]]
 
     chunk.layer_type = layer_type if layer_type is not None else 'unknown'
     return chunk

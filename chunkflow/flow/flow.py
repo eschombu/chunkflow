@@ -960,12 +960,14 @@ def save_nrrd(tasks, input_chunk_name, file_name):
               help='data type of output chunk.')
 @click.option('--layer-type', type=str, default='image',
               help='layer type of output chunk (default: image).')
+@click.option('--workers', '-w', type=int, default=1,
+              help='size of ProcessPool to use for loading png files.')
 @operator
 def load_png(tasks: dict, path: str, 
                 output_chunk_name: str, cutout_offset: tuple,
                 voxel_offset: tuple, voxel_size: tuple, 
                 digit_num: int, chunk_size: tuple, infer_chunk: bool,
-                dtype: str, layer_type: str):
+                dtype: str, layer_type: str, workers: int):
     """Read a series of png files."""
     cutout_offset = Cartesian.from_collection(cutout_offset)
     voxel_offset = Cartesian.from_collection(voxel_offset)
@@ -990,6 +992,7 @@ def load_png(tasks: dict, path: str,
                 voxel_size=voxel_size,
                 dtype=dtype,
                 layer_type=layer_type,
+                workers=workers,
             )
         yield task
 
