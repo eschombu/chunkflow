@@ -65,7 +65,7 @@ def deterministic_shuffle(arr: Iterable, key: Optional[Callable] = None, init_va
         hash_input_vals = arr
     else:
         hash_input_vals = map(key, arr)
-    vals_with_hash = ((val, get_hexhash(val, init_val=init_val)) for val in hash_input_vals)
+    vals_with_hash = ((val, get_hexhash(val2hash, init_val=init_val)) for val, val2hash in zip(arr, hash_input_vals))
     sorted_vals = sorted(vals_with_hash, key=lambda x: x[1])
     return [val for val, _ in sorted_vals]
 
