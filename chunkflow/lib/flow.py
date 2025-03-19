@@ -1,3 +1,4 @@
+import os
 import pdb
 import sys
 import traceback
@@ -59,7 +60,8 @@ def main(mip, dry_run, verbose, debug):
     state['mip'] = mip
     state['dry_run'] = dry_run
     state['verbose'] = verbose
-    state['debug'] = debug
+    state['debug'] = debug if 'SLURM_JOB_ID' not in os.environ else False
+
     if dry_run:
         print('\nYou are using dry-run mode, will not do the work!')
 
@@ -86,7 +88,7 @@ def process_commands(operators, mip, dry_run, verbose, debug):
     except (KeyboardInterrupt, pdb.bdb.BdbQuit):
         sys.exit(1)
     except Exception:
-        if debug:
+        if state.get('debug'):
             traceback.print_exc()
             pdb.post_mortem()
         else:
