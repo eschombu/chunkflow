@@ -81,6 +81,8 @@ def create_bbox(start: tuple, stop: tuple, center: tuple, size: tuple, string: s
                 start = Cartesian.from_collection(stop) - Cartesian.from_collection(size)
             elif center is not None and size is not None:
                 start = Cartesian.from_collection(center) - Cartesian.from_collection(size) // 2
+        else:
+            start = Cartesian.from_collection(start)
         if stop is None:
             if start is not None and size is not None:
                 stop = Cartesian.from_collection(start) + Cartesian.from_collection(size)
@@ -89,6 +91,8 @@ def create_bbox(start: tuple, stop: tuple, center: tuple, size: tuple, string: s
             elif start is not None and center is not None:
                 size = 2 * (Cartesian.from_collection(center) - Cartesian.from_collection(start))
                 stop = start + size
+        elif not isinstance(stop, Cartesian):
+            stop = Cartesian.from_collection(stop)
         bbox = BoundingBox(start, stop)
     task = get_initial_task()
     task['bbox'] = bbox
