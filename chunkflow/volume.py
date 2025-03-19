@@ -227,7 +227,8 @@ def load_chunk_or_volume(file_path: str, *arg, **kwargs):
     if kwargs is None:
         kwargs = dict()
 
-    if not os.path.exists(file_path):
+    real_path = file_path.split('#', 1)[0].replace('file://', '').replace('precomputed://', '')
+    if not os.path.exists(real_path):
         return None
     elif file_path.endswith('.h5'):
         return Chunk.from_h5(file_path)
@@ -261,7 +262,7 @@ def load_chunk_or_volume(file_path: str, *arg, **kwargs):
             chunk.voxel_size = vol.voxel_size
             return chunk
     else:
-        raise ValueError(f'only .h5 and .npy files are supported, but got {file_path}')
+        raise ValueError(f'only precomputed, .h5, and .npy files are supported, but got {file_path}')
     
 
 def get_candidate_block_bounding_boxes_with_different_voxel_size(
