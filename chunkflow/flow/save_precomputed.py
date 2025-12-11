@@ -23,15 +23,22 @@ class SavePrecomputedOperator(OperatorBase):
                  upload_log: bool = True,
                  create_thumbnail: bool = False,
                  fill_missing: bool = False,
+                 autocrop: bool = True,
+                 invert: bool = False,
                  green_threads: bool = False,
                  parallel: int = 1,
-                 name: str = 'save-precomputed'):
+                 name: str = 'save-precomputed',
+                 non_aligned_writes=False,
+    ):
         super().__init__(name=name)
         
         self.upload_log = upload_log
         self.create_thumbnail = create_thumbnail
         self.mip = mip
+        self.invert = invert
 
+        if '://' not in volume_path:
+            volume_path = 'file://' + volume_path
         # if not volume_path.startswith('precomputed://'):
         #     volume_path = 'precomputed://' + volume_path
         self.volume_path = volume_path
@@ -41,13 +48,15 @@ class SavePrecomputedOperator(OperatorBase):
             self.volume_path,
             fill_missing=fill_missing,
             bounded=False,
-            autocrop=True,
+            autocrop=autocrop,
             mip=self.mip,
             cache=False,
             green_threads=green_threads,
             delete_black_uploads=True,
             parallel=parallel,
-            progress=True)
+            progress=True,
+            non_aligned_writes=non_aligned_writes,
+        )
 
         if upload_log:
             log_path = os.path.join(volume_path, 'log')
@@ -66,17 +75,22 @@ class SavePrecomputedOperator(OperatorBase):
         print(f'save chunk {chunk.bbox.string} to {self.volume_path}')
         
         start = time.time()
-        chunk = self._auto_convert_dtype(chunk, self.volume)
+        arr = np.transpose(chunk.array)
+        arr = self._auto_convert_dtype(arr, self.volume)
+
+        if self.invert:
+            max_val = np.iinfo(arr.dtype).max
+            print(yellow(f'inverting chunk data using max value {max_val}'))
+            arr = max_val - arr
         
         # transpose czyx to xyzc order
-        arr = np.transpose(chunk.array)
         self.volume[chunk.slices[::-1]] = arr
         
         if self.create_thumbnail:
             self._create_thumbnail(chunk)
 
-        # add timer for save operation itself
         if log:
+            # log save operation time
             log['timer'][self.name] = time.time() - start
 
         if self.upload_log:
@@ -89,14 +103,14 @@ class SavePrecomputedOperator(OperatorBase):
             chunk /= 255.
             # chunk = chunk / chunk.array.max() * np.iinfo(volume.dtype).max
         elif np.issubdtype(volume.dtype, np.uint8) and np.issubdtype(chunk.dtype, np.floating):
-            chunk.max() <= 1.
+            assert chunk.max() <= 1.
             chunk *= 255
 
         if volume.dtype != chunk.dtype:
             print(yellow(f'converting chunk data type {chunk.dtype} ' + 
                          f'to volume data type: {volume.dtype}'))
-            # float_chunk = chunk.astype(np.float64)
-            # chunk = float_chunk / np.iinfo(chunk.dtype).max * np.iinfo(self.volume.dtype).max
+            float_chunk = chunk.astype(np.float64)
+            chunk = float_chunk / np.iinfo(chunk.dtype).max * np.iinfo(self.volume.dtype).max
             # chunk = chunk / chunk.array.max() * np.iinfo(volume.dtype).max
             return chunk.astype(volume.dtype)
         else:

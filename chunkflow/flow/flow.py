@@ -2807,30 +2807,30 @@ def quantize(tasks, input_chunk_name: str, output_chunk_name: str, mode: str):
 @main.command('save-precomputed')
 @click.option('--name', type=str, default='save-precomputed', help='name of this operator')
 @click.option('--volume-path', '-v', type=str, required=True, help='volume path')
-@click.option('--input-chunk-name', '-i',
-              type=str, default=DEFAULT_CHUNK_NAME, help='input chunk name')
-@click.option('--mip', '-m',
-    type=click.INT, default=None, help="mip level to write")
-@click.option('--upload-log/--no-upload-log',
-              default=False, help='the log will be put inside volume-path')
-@click.option('--create-thumbnail/--no-create-thumbnail',
-    default=False, help='create thumbnail or not. ' +
-    'the thumbnail is a downsampled and quantized version of the chunk.')
-@click.option('--intensity-threshold', '-t',
-    default=None, type=click.FLOAT,
-    help='do not save anything if all voxel intensity is below threshold.'
-)
-@click.option('--parallel', '-p',
-    default=1, type=click.INT, 
+@click.option('--input-chunk-name', '-i', type=str, default=DEFAULT_CHUNK_NAME,
+    help='input chunk name')
+@click.option('--mip', '-m', type=click.INT, default=None,
+    help="mip level to write")
+@click.option('--upload-log/--no-upload-log', default=False,
+    help='the log will be put inside volume-path')
+@click.option('--create-thumbnail/--no-create-thumbnail', default=False,
+    help='create thumbnail or not. the thumbnail is a downsampled and quantized version of the chunk.')
+@click.option('--intensity-threshold', '-t', default=None, type=click.FLOAT,
+    help='do not save anything if all voxel intensity is below threshold.')
+@click.option('--parallel', '-p', default=1, type=click.INT,
     help='number of processes. default is 1 and is serial.')
 @click.option('--fill-missing/--no-fill', default=False,
     help='save blocks with all zeros or not. Default is not.')
+@click.option('--invert/--no-invert', default=False,
+    help='invert before saving (dtype_max - values). Default is False.')
+@click.option('--non-aligned-writes/--aligned-writes', default=False,
+    help='allow non-aligned writes to CloudVolume. Default is False.')
 @operator
 def save_precomputed(tasks, name: str, volume_path: str, 
         input_chunk_name: str, mip: int, upload_log: bool, 
         create_thumbnail: bool, intensity_threshold: float,
-        parallel: int,
-        fill_missing: bool):
+        parallel: int, fill_missing: bool, invert: bool,
+        non_aligned_writes: bool):
     """Save chunk to volume."""
     if mip is None:
         mip = state['mip']
@@ -2843,6 +2843,8 @@ def save_precomputed(tasks, name: str, volume_path: str,
         name=name,
         parallel=parallel,
         fill_missing=fill_missing,
+        invert=invert,
+        non_aligned_writes=non_aligned_writes,
     )
 
     for task in tasks:

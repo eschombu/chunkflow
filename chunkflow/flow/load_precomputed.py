@@ -24,6 +24,10 @@ class LoadPrecomputedOperator(OperatorBase):
                  name: str = 'cutout',
                  green_threads: bool = False):
         super().__init__(name=name)
+
+        if '://' not in volume_path:
+            volume_path = 'file://' + volume_path
+
         self.volume_path = volume_path
         self.mip = mip
         self.fill_missing = fill_missing
