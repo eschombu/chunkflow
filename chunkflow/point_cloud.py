@@ -1,5 +1,6 @@
 from __future__ import annotations
 from functools import cached_property
+from typing import Iterable, Optional
 
 import h5py
 import numpy as np
@@ -7,9 +8,13 @@ from .lib.cartesian_coordinate import Cartesian, BoundingBox
 
 class PointCloud:
     def __init__(self, points: np.ndarray, 
-            voxel_size: Cartesian) -> None:
+            voxel_size: Cartesian,
+            labels: Optional[Iterable] = None) -> None:
         assert points.ndim == 2
         assert points.shape[1] == 3
+        if labels is not None:
+            labels = np.array(list(labels))
+            assert len(labels) == points.shape[0]
 
         if not isinstance(voxel_size, Cartesian):
             assert len(voxel_size) == 3
@@ -17,6 +22,7 @@ class PointCloud:
         
         self.points = points
         self.voxel_size = voxel_size
+        self.labels = labels
 
     @classmethod
     def from_h5(cls, file_path: str) -> PointCloud:
@@ -25,13 +31,19 @@ class PointCloud:
         with h5py.File(file_path) as hf:
             points = np.asarray(hf['points'])
             voxel_size = Cartesian.from_collection(hf['voxel_size'])
-        return cls(points, voxel_size)
+            if 'labels' in hf:
+                labels = np.asarray(hf['labels'])
+            else:
+                labels = None
+        return cls(points, voxel_size, labels)
     
     def to_h5(self, file_path: str):
         assert file_path.endswith('.h5')
         with h5py.File(file_path, 'w') as hf:
             hf['points'] = self.points
             hf['voxel_size'] = self.voxel_size
+            if self.labels is not None:
+                hf['labels'] = self.labels
 
     @classmethod
     def from_swc(cls, file_path: str) -> PointCloud:
@@ -45,4 +57,4 @@ class PointCloud:
 
     @cached_property
     def point_num(self):
-        return self.points.shape[0] 
+        return self.points.shape[0]
