@@ -556,6 +556,11 @@ def cleanup(dir: str, mode: str, suffix: str):
 @click.option('--volume-size', '-z',
               type=click.INT, nargs=3, default=None, callback=default_none,
               help='total size of the volume.')
+@click.option('--volume-size-ref',
+              type=click.Path(exists=True), default=None, callback=default_none,
+              help='path to reference volume for obtaining size.')
+@click.option('--align-volume-size/--no-align-volume-size', default=False,
+              help='align the volume size to the chunk/block size.')
 @click.option('--block-size', '-b',
               type=click.INT, nargs=3, required=True,
               help='chunk size of each file.')
@@ -568,11 +573,45 @@ def cleanup(dir: str, mode: str, suffix: str):
 @operator
 def create_info(tasks, input_chunk_name: str, volume_path: str, channel_num: int,
                 layer_type: str, data_type: str, encoding: str, voxel_size: tuple, 
-                voxel_offset: tuple, volume_size: tuple, block_size: tuple, factor: tuple, max_mip: int):
+                voxel_offset: tuple, volume_size: tuple, volume_size_ref: str,
+                block_size: tuple, align_volume_size: bool, factor: tuple, max_mip: int):
     """Create attrsdata for Neuroglancer Precomputed volume."""
+
+    if '://' not in volume_path:
+        volume_path = 'file://' + volume_path
     
     for task in tasks:
         if task is not None:
+            if volume_size is None and volume_size_ref is not None:
+                if '.zarr' in volume_size_ref.lower():
+                    volume_size = zarr.open(volume_size_ref).shape
+                elif os.path.isdir(volume_size_ref):
+                    if os.path.exists(os.path.join(volume_size_ref, 'info')):
+                        if '://' not in volume_size_ref:
+                            volume_size_ref = 'file://' + volume_size_ref
+                        ref_volume = CloudVolume(volume_size_ref)
+                        volume_size = ref_volume.shape[::-1]
+                    else:
+                        files = os.listdir(volume_size_ref)
+                        if len(files) == 0:
+                            raise ValueError(f'no files in {volume_size_ref}')
+                        first_file = files[0]
+                        if first_file.endswith('.png'):
+                            if not all(fname.lower().endswith('.png') for fname in files):
+                                raise ValueError(f'not all files in {volume_size_ref} are pngs')
+                            img = cv2.imread(os.path.join(volume_size_ref, first_file))
+                            volume_size = [len(files)] + list(img.shape)
+                        elif first_file.endswith('.tif'):
+                            if not all(fname.lower().endswith('.tif') for fname in files):
+                                raise ValueError(f'not all files in {volume_size_ref} are tiffs')
+                            img = tifffile.imread(os.path.join(volume_size_ref, first_file))
+                            volume_size = [len(files)] + list(img.shape)
+                        else:
+                            raise ValueError(f'unsupported file format for volume size reference: {volume_size_ref}')
+                else:
+                    raise NotImplementedError(f'unsupported file format for volume size reference: {volume_size_ref}')
+                if len(volume_size) == 4:
+                    volume_size = volume_size[1:]
             if not input_chunk_name in task:
                 if voxel_offset is None:
                     voxel_offset = Cartesian(0, 0, 0)
@@ -610,6 +649,13 @@ def create_info(tasks, input_chunk_name: str, volume_path: str, channel_num: int
                 mesh = "mesh"
             else:
                 mesh = None
+
+            if align_volume_size:
+                new_volume_size = list(volume_size)
+                for dim in range(3):
+                    if new_volume_size[dim] % block_size[dim] != 0:
+                        new_volume_size[dim] += block_size[dim] - (new_volume_size[dim] % block_size[dim])
+                volume_size = Cartesian.from_collection(new_volume_size)
 
             info = CloudVolume.create_new_info(
                 channel_num,
