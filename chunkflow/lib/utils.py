@@ -83,8 +83,17 @@ class SharedMemoryContainer:
         np.copyto(shared_array, array)
         return cls(shared_mem, array.shape, array.dtype)
 
+    @classmethod
+    def create_empty(cls, shape: tuple, dtype: type):
+        shared_mem = shared_memory.SharedMemory(create=True, size=np.prod(shape) * np.dtype(dtype).itemsize)
+        shared_array = np.ndarray(shape, dtype=dtype, buffer=shared_mem.buf)
+        return cls(shared_mem, shape, dtype)
+
     def load(self):
         return np.ndarray(self.shape, dtype=self.dtype, buffer=self.shared_mem.buf)
+
+    def copy(self):
+        return np.copy(self.load())
 
     def close(self):
         self.shared_mem.close()
