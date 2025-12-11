@@ -43,14 +43,20 @@ class AffinityMap(Chunk):
         Returns:
             Chunk: the gray scale image chunk
         """
-        if mode == 'z':
-            # only use the last channel, it is the Z affinity
-            # if this is affinitymap
-            image = self[-1, :, :, :]
-        elif mode == 'xy':
-            image = (self[0,...] + self[1, ...]) / 2.
+        if mode == 'mean' or set(mode) == {'x', 'y', 'z'}:
+            image = self.array.mean(axis=0)
+        elif mode == 'max':
+            image = self.array.max(axis=0)
+        elif mode == 'min':
+            image = self.array.min(axis=0)
+        elif (0 < len(mode) < 3) and all(ax in {'x', 'y', 'z'} for ax in mode):
+            ix_map = {'x': 0, 'y': 1, 'z': 2}
+            image = np.zeros(self.shape[1:], dtype=np.float32)
+            for ax in mode:
+                image += self[ix_map[ax], ...]
+            image /= len(mode)
         else:
-            raise ValueError(f'only support xy and z mode, but got {mode}')
+            raise ValueError(f"Invalid value for mode: '{mode}'")
 
         image = (image * 255.).astype(np.uint8)
         image = Chunk(image)

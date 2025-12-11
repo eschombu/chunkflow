@@ -2779,7 +2779,7 @@ def neuroglancer(tasks, name, voxel_size, port, inputs, ignore_missing, set_view
     help = 'input chunk name')
 @click.option('--output-chunk-name', '-o', type=str, default='chunk', 
     help= 'output chunk name')
-@click.option('--mode', type=click.Choice(['xy', 'z']), default='xy',
+@click.option('--mode', type=str, default='xy',
     help='xy: average of xy channel; z: only the z channel')
 @operator
 def quantize(tasks, input_chunk_name: str, output_chunk_name: str, mode: str):
