@@ -2062,17 +2062,18 @@ def evaluate_segmentation(tasks, segmentation_chunk_name, groundtruth_chunk_name
     help='output chunk name')
 @click.option('--factor', '-f', type=click.INT, nargs=3, default=(2,2,2),
     help='downsample factor in zyx. The default is 2x2x2.')
+@click.option('--layer-type', type=str, default=None, help='chunk layer type')
 @operator
-def downsample(tasks, input_chunk_name: str, output_chunk_name: str, factor: tuple):
+def downsample(tasks, input_chunk_name: str, output_chunk_name: str, factor: tuple, layer_type: str):
     for task in tasks:
         if task is not None:
             chunk = task[input_chunk_name]
-            if chunk.is_image:
+            if layer_type == 'image' or chunk.is_image:
                 arr = tinybrain.downsample_with_averaging(chunk.array, factor)[0]
-            elif chunk.is_segmentation:
+            elif layer_type == 'segmentation' or chunk.is_segmentation:
                 arr = tinybrain.downsample_segmentation(chunk.array, factor)[0]
             else:
-                raise TypeError(f'only support image or segmentation, but got: {chunk.dtype}')
+                raise TypeError(f'only support image or segmentation, but got: {layer_type or chunk.dtype}')
                 
             factor = Cartesian.from_collection(factor)
             voxel_offset = chunk.voxel_offset // factor
@@ -2086,24 +2087,27 @@ def downsample(tasks, input_chunk_name: str, output_chunk_name: str, factor: tup
         yield task
 
 @main.command('downsample-upload')
-@click.option('--name',
-              type=str, default='downsample-upload', help='name of operator')
-@click.option('--input-chunk-name', '-i',
-              type=str, default='chunk', help='input chunk name')
-@click.option('--volume-path', '-v', type=str, help='path of output volume')
+@click.option('--name', type=str, default='downsample-upload',
+    help='name of operator')
+@click.option('--input-chunk-name', '-i', type=str, default='chunk',
+    help='input chunk name')
+@click.option('--volume-path', '-v', type=str,
+    help='path of output volume')
 @click.option('--factor', '-f', type=click.INT, nargs=3, default=(2, 2, 2), 
     help='downsampling factor in z,y,x.')
-@click.option('--chunk-mip', '-c', type=click.INT, default=None, help='input chunk mip level')
-@click.option('--start-mip', '-s', 
-    type=click.INT, default=None, help='the start uploading mip level.')
-@click.option('--stop-mip', '-p',
-    type=click.INT, default=5, help='stop mip level. the indexing follows python style and ' +
-    'the last index is exclusive.')
-@click.option('--fill-missing/--no-fill-missing',
-              default=True, help='fill missing or not when there is all zero blocks.')
+@click.option('--chunk-mip', '-c', type=click.INT, default=None,
+    help='input chunk mip level')
+@click.option('--start-mip', '-s', type=click.INT, default=None,
+    help='the start uploading mip level.')
+@click.option('--stop-mip', '-p', type=click.INT, default=5,
+    help='stop mip level. the indexing follows python style and the last index is exclusive.')
+@click.option('--fill-missing/--no-fill-missing', default=True,
+    help='fill missing or not when there is all zero blocks.')
+@click.option('--autocrop/--no-autocrop', default=True,
+    help='pass to CloudVolume api.')
 @operator
-def downsample_upload(tasks, name, input_chunk_name, volume_path, 
-                      factor, chunk_mip, start_mip, stop_mip, fill_missing):
+def downsample_upload(tasks, name, input_chunk_name, volume_path, factor,
+                      chunk_mip, start_mip, stop_mip, fill_missing, autocrop):
     """Downsample chunk and upload to volume."""
     if chunk_mip is None:
         chunk_mip = state['mip']
@@ -2115,6 +2119,7 @@ def downsample_upload(tasks, name, input_chunk_name, volume_path,
         start_mip=start_mip,
         stop_mip=stop_mip,
         fill_missing=fill_missing,
+        autocrop=autocrop,
         name=name)
 
     for task in tasks:

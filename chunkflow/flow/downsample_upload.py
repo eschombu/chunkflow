@@ -24,6 +24,7 @@ class DownsampleUploadOperator(OperatorBase):
                  start_mip: int = None,
                  stop_mip: int = 5,
                  fill_missing: bool = True,
+                 autocrop: bool = True,
                  verbose=False,
                  name='downsample-upload'):
         """
@@ -44,7 +45,7 @@ class DownsampleUploadOperator(OperatorBase):
             vols[mip] = CloudVolume(volume_path,
                                     fill_missing=fill_missing,
                                     bounded=False,
-                                    autocrop=True,
+                                    autocrop=autocrop,
                                     mip=mip,
                                     green_threads=True,
                                     delete_black_uploads=True,
