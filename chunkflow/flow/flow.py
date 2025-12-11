@@ -1,19 +1,25 @@
 #!/usr/bin/env python
 
 import json
+import multiprocessing
 import os
 from collections import defaultdict
 from copy import deepcopy
+from itertools import repeat
+from multiprocessing.managers import SharedMemoryManager
 from pathlib import Path
-from time import time
+from time import sleep, time
 from typing import Generator, List, Tuple
 
 import click
 import numpy as np
 from tqdm import tqdm
+from tqdm.contrib.concurrent import process_map
 
-import zarr
+import cv2
+import tifffile
 import tinybrain
+import zarr
 
 from cloudvolume import CloudVolume
 from cloudvolume.lib import Vec
@@ -1116,35 +1122,77 @@ def load_png(tasks: dict, path: str,
     help='the layer type in neuroglancer for visualization.')
 @click.option('--dtype', '-d',
               type=click.Choice(['uint8', 'uint16', 'uint32', 'uint64', 'float32', 'float64', 'float16']),
-              help='convert to data type')
+              default=None, help='convert to data type')
 @click.option('--infer-chunk/--no-infer-chunk', '-i', default=False,
               help='infer chunk cutout boundaries from other chunks.')
-@click.option('--output-chunk-name', '-o', type=str, default='chunk',
+@click.option('--chunk-bbox', type=str, default=None, callback=default_none,
+              help='BoundingBox string of chunk.')
+@click.option('--chunk-start', type=click.INT, nargs=3, default=None, callback=default_none,
+              help='chunk start coordinates.')
+@click.option('--chunk-stop', type=click.INT, nargs=3, default=None, callback=default_none,
+              help='chunk stop coordinates.')
+@click.option('--chunk-size', type=click.INT, nargs=3, default=None, callback=default_none,
+              help='chunk size.')
+@click.option('--missing', type=str, default=None, callback=default_none,
+              help='missing image indices, separated by commas.')
+@click.option('--missing-val', type=str, default='neighbor',
+              help='value to use to fill missing images.')
+@click.option('--output-chunk-name', '-o', type=str, default=DEFAULT_CHUNK_NAME,
               help='chunk name in the global state')
+@click.option('--workers', '-w', type=int, default=1,
+              help='size of ProcessPool to use for loading TIFF files.')
+@click.option('--parallel-chunk-size', type=click.INT, default=1,)
+@click.option('--verbose/--no-verbose', default=False)
 @operator
-def load_tif(tasks, name: str, file_name: str, voxel_offset: tuple,
-             voxel_size: tuple, layer_type: str, dtype: str, infer_chunk: bool, output_chunk_name: str):
+def load_tif(tasks, name: str, file_name: str, voxel_offset: tuple, voxel_size: tuple, layer_type: str, dtype: str,
+             infer_chunk: bool, chunk_bbox: str, chunk_start: tuple, chunk_stop: tuple, chunk_size: tuple,
+             missing: str, missing_val: str, output_chunk_name: str, workers: int, parallel_chunk_size: int,
+             verbose: bool):
     """Read tiff files."""
     for task in tasks:
         if task is not None:
             start = time()
             if infer_chunk:
-                chunk = None
-                for key in task:
-                    if isinstance(task[key], Chunk):
-                        chunk = task[key]
-                        break
-                if chunk is not None:
+                if any(v is not None for v in [chunk_bbox, chunk_start, chunk_stop, chunk_size]):
+                    raise ValueError('infer_chunk and chunk_bbox parameters can not be used at the same time.')
+                if 'bbox' in task:
+                    chunk_bbox = task['bbox']
                     if voxel_offset is None:
-                        voxel_offset = chunk.voxel_offset
-                    if voxel_size is None:
-                        voxel_size = chunk.voxel_size
+                        voxel_offset = chunk_bbox.start
+                else:
+                    chunk = None
+                    for key in task:
+                        if isinstance(task[key], Chunk):
+                            chunk = task[key]
+                            break
+                    if chunk is not None:
+                        chunk_bbox = chunk.bbox
+                        if voxel_offset is None:
+                            voxel_offset = chunk.voxel_offset
+                        if voxel_size is None:
+                            voxel_size = chunk.voxel_size
+            if missing:
+                missing = [int(i) for i in missing.split(',')]
+            try:
+                missing_val = float(missing_val)
+            except (TypeError, ValueError):
+                pass
             task[output_chunk_name] = Chunk.from_tif(
                 file_name,
-                dtype=dtype,
+                bbox=chunk_bbox,
+                bbox_start=chunk_start,
+                bbox_stop=chunk_stop,
+                bbox_size=chunk_size,
                 voxel_offset=voxel_offset,
                 layer_type=layer_type,
-                voxel_size=voxel_size)
+                voxel_size=voxel_size,
+                dtype=dtype,
+                missing_ixs=missing,
+                missing_value=missing_val,
+                workers=workers,
+                parallel_chunk_size=parallel_chunk_size,
+                verbose=verbose,
+            )
             task['log']['timer'][name] = time() - start
         yield task
 
@@ -1153,8 +1201,11 @@ def load_tif(tasks, name: str, file_name: str, voxel_offset: tuple,
 @click.option('--input-chunk-name', '-i',
               type=str, default=DEFAULT_CHUNK_NAME, help='input chunk name')
 @click.option('--file-name', '-f', default=None,
-    type=click.Path(dir_okay=False, resolve_path=True),
+    type=click.Path(dir_okay=False, resolve_path=False),
     help='file name of tif file, the extention should be .tif or .tiff')
+@click.option('--file-name-prefix', '-p', default=None,
+    type=click.Path(dir_okay=False, resolve_path=False),
+    help='file name prefix of tif file, to be combined with the specified or default file name')
 @click.option('--file-dir', '-d', default=None,
     type=click.Path(file_okay=False, resolve_path=True),
     help='directory name in which to store tiff file(s).')
@@ -1166,13 +1217,15 @@ def load_tif(tasks, name: str, file_name: str, voxel_offset: tuple,
 @click.option('--two-dim/--no-two-dim', default=False,
               help='Write separate images for each slice in z.')
 @operator
-def save_tif(tasks, input_chunk_name: str, file_name: str, file_dir: str, dtype: str, compression: str, two_dim: bool):
+def save_tif(tasks, input_chunk_name: str, file_name: str, file_name_prefix: str, file_dir: str, dtype: str,
+             compression: str, two_dim: bool):
     """Save chunk as a TIF file."""
     for task in tasks:
         if task is not None:
             chunk = task[input_chunk_name]
             chunk = chunk.astype(dtype)
-            chunk.to_tif(file_name, file_dir, compression=compression, two_dim=two_dim)
+            chunk.to_tif(file_name=file_name, file_name_prefix=file_name_prefix, file_dir=file_dir,
+                         compression=compression, two_dim=two_dim)
         yield task
 
 

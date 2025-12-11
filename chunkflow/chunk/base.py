@@ -1,28 +1,172 @@
 from __future__ import annotations
-from typing import Iterable, Optional, Self, Union
 import os
 import glob
+from itertools import repeat
+from multiprocessing.managers import SharedMemoryManager
 from numbers import Number
+from typing import Iterable, Optional, Self, Union
 
-from tqdm import tqdm
+import cc3d
 import h5py
 import numpy as np
+import tifffile
+from cloudvolume.lib import yellow, Bbox
 from numpy.core.numerictypes import issubdtype
 from numpy.lib.mixins import NDArrayOperatorsMixin
-
-import tifffile
-import cc3d
 from scipy.ndimage import gaussian_filter
+from tqdm import tqdm
+from tqdm.contrib.concurrent import process_map
 
-from cloudvolume.lib import yellow, Bbox
+from chunkflow.chunk.validate import validate_by_template_matching
 from chunkflow.lib.cartesian_coordinate import BoundingBox, Cartesian, PhysicalBoundingBox
 
-# from typing import Tuple
-# Offset = Tuple[int, int, int]
-from .validate import validate_by_template_matching
 
 def layer_type_is_valid(type: str):
     return type in set([None, 'image', 'segmentation', 'probability_map', 'affinity_map', 'unknown'])
+
+
+# def _load_tiff(
+#         file_name: str,
+#         bbox_slice: Optional[tuple[slice]],
+#         arr: Optional[np.ndarray | 'SharedMemoryContainer'] = None,
+#         arr_idx: Optional[int] = None,
+#         missing_value=0,
+#         verbose=False,
+# ) -> np.ndarray | None:
+#     if file_name is not None:
+#         img = tifffile.imread(file_name)
+#         img_shape = img.shape
+#         if bbox_slice:
+#             img = img[*bbox_slice]
+#         if verbose:
+#             msg = f'read tif image {file_name} with size of {img_shape}'
+#             if bbox_slice:
+#                 msg += f' with bbox slice {bbox_slice}'
+#             print(msg)
+#         if arr is not None:
+#             from chunkflow.lib.utils import SharedMemoryContainer  # avoid circular import
+#
+#             if verbose:
+#                 msg = 'filling provided array'
+#                 if arr_idx is not None:
+#                     msg += f' at index {arr_idx}'
+#                 print(msg)
+#             if isinstance(arr, SharedMemoryContainer):
+#                 if arr_idx is not None:
+#                     arr.load()[arr_idx, :, :] = img
+#                 else:
+#                     arr.load()[:, :] = img
+#             else:
+#                 if arr_idx is not None:
+#                     arr.load()[arr_idx, :, :] = img
+#                 else:
+#                     arr.load()[:, :] = img
+#             return None
+#         else:
+#             return img
+#     else:
+#         if verbose:
+#             print(f'missing tif image, filling with {missing_value}')
+#         if arr is not None:
+#             if isinstance(arr, SharedMemoryContainer):
+#                 if arr_idx is not None:
+#                     arr.load()[arr_idx, :, :] = missing_value #np.full(arr.shape[1:], missing_value, dtype=dtype)
+#                 else:
+#                     arr.load()[:, :] = missing_value #np.full(arr.shape, missing_value, dtype=dtype)
+#             else:
+#                 if arr_idx is not None:
+#                     arr.load()[arr_idx, :, :] = missing_value
+#                 else:
+#                     arr.load()[:, :] = missing_value
+#         return None
+
+
+def _load_tiff(
+        file_name: str,
+        bbox_slice: Optional[tuple[slice]] = None,
+        dtype: str = None,
+        verbose=False,
+) -> np.ndarray | None:
+    if file_name is not None:
+        img = tifffile.imread(file_name)
+        if dtype:
+            img = img.astype(dtype)
+        img_shape = img.shape
+        if bbox_slice:
+            img = img[*bbox_slice]
+        if verbose:
+            msg = f'read tif image {file_name} with size of {img_shape}'
+            if bbox_slice:
+                msg += f' with bbox slice {bbox_slice}'
+            print(msg)
+        return img
+    else:
+        if verbose:
+            print(f'missing tif image, filling with {missing_value}')
+        return None
+
+
+def _load_tiffs_chunk(
+        file_names: list[str],
+        bbox_slice: Optional[tuple[slice]] = None,
+        dtype: str = None,
+        verbose=False,
+) -> tuple[np.ndarray, list]:
+    first_nonempty_idx = [i for i, fname in enumerate(file_names) if fname is not None]
+    if len(first_nonempty_idx) == 0:
+        return None
+    first_nonempty_idx = first_nonempty_idx[0]
+    first_img = _load_tiff(file_names[first_nonempty_idx], bbox_slice, dtype, verbose)
+    imgs = np.empty((len(file_names), *first_img.shape), dtype=first_img.dtype)
+    missing_ixs = []
+    for i, fname in enumerate(file_names):
+        if i == first_nonempty_idx:
+            imgs[i, ...] = first_img
+        elif fname is None:
+            missing_ixs.append(i)
+            # imgs[i, ...] = np.full(first_img.shape, missing_val, dtype=first_img.dtype)
+        else:
+            imgs[i, ...] = _load_tiff(fname, bbox_slice, dtype, verbose)
+    return imgs, missing_ixs
+
+
+def _fill_missing_frames(
+        imgs: np.ndarray,
+        missing_ixs: list,
+        missing_val: str | int | float = 'neighbor',
+        downsample_factor=2,
+        verbose=False,
+) -> None:
+    filled_ixs = [i for i in range(imgs.shape[0]) if i not in missing_ixs]
+    if isinstance(missing_val, str):
+        if len(filled_ixs) == 0:
+            raise ValueError('all images are missing, cannot fill with neighbor')
+        if missing_val == 'neighbor':
+            for missing_idx in missing_ixs:
+                # fill with nearest non-missing neighbor; prefer one it would be merged with if downsampling
+                downsample_groups = (np.arange(0, imgs.shape[0]) // downsample_factor).astype(int)
+
+                def sort_key(idx: int) -> tuple:
+                    return (abs(downsample_groups[idx] - downsample_groups[missing_idx]), abs(idx - missing_idx))
+
+                nearest_idx = sorted(filled_ixs, key=sort_key)[0]
+                if verbose:
+                    print(f'filling missing image at index {missing_idx} with nearest image at index {nearest_idx}')
+                imgs[missing_idx, ...] = imgs[nearest_idx, ...]
+        else:
+            if missing_val == 'mean':
+                fill_val = np.nanmean(imgs[filled_ixs, ...])
+            elif missing_val == 'median':
+                fill_val = np.nanmedian(imgs[filled_ixs, ...])
+            else:
+                raise ValueError(f'unsupported missing value string: {missing_val}')
+            if verbose:
+                print(f'filling {len(missing_ixs)} missing images with {missing_val} value {fill_val}')
+            imgs[missing_ixs, ...] = fill_val
+    else:
+        if verbose:
+            print(f'filling {len(missing_ixs)} missing images with value {missing_val}')
+        imgs[missing_ixs, ...] = missing_val
 
 
 class Chunk(NDArrayOperatorsMixin):
@@ -210,38 +354,142 @@ class Chunk(NDArrayOperatorsMixin):
         return cls(arr, voxel_offset=voxel_offset, voxel_size=voxel_size)
     
     @classmethod
-    def from_tif(cls, file_name: str, 
-            voxel_offset: tuple=None, 
+    def from_tif(cls, file_name: str,
+            bbox: BoundingBox | str = None,
+            bbox_start: tuple = None,
+            bbox_stop: tuple = None,
+            bbox_size: tuple = None,
+            voxel_offset: tuple = None,
             dtype: str = None,
             layer_type: str = None,
-            voxel_size: tuple=None):
+            voxel_size: tuple = None,
+            missing_ixs: int | Iterable[int] = None,
+            missing_value: int | float | str = 'neighbor',  # valid strings: {'neighbor', 'mean', 'median'}
+            workers: int = 1,
+            parallel_chunk_size: int = 1,
+            verbose: bool = False,
+    ):
         assert os.path.exists(file_name)
         if os.path.isfile(file_name):
             arr = tifffile.imread(file_name)
             if dtype:
                 arr = arr.astype(dtype)
+            chunk_offset = voxel_offset
+            missing_frames = []
         elif os.path.isdir(file_name):
-            fnames = glob.glob(f'{file_name}/*.tif*')
+            fnames = glob.glob(f"{file_name.rstrip('/')}/*.tif*")
             fnames = sorted(fnames)
-            section = tifffile.imread(fnames[0])
-            if dtype is None:
-                dtype = section.dtype
-            arr = np.empty(
-                (len(fnames), *section.shape[-2:]), 
-                dtype=dtype)
-            arr[0,:,:] = section
-            for idx, fname in tqdm(
-                    enumerate(fnames[1:]), 
-                    desc='loading tif files: '):
-                section = tifffile.imread(fname)
-                arr[idx+1, :, :] = section
+            if missing_ixs is not None:
+                if isinstance(missing_ixs, int):
+                    missing_ixs = [missing_ixs]
+                else:
+                    missing_ixs = sorted(missing_ixs)
+                for idx in missing_ixs:
+                    fnames.insert(idx, None)
 
-        print(f'read tif chunk with size of {arr.shape}, voxel offset: {voxel_offset}, voxel size: {voxel_size}')
-        return cls(arr, voxel_offset=voxel_offset, voxel_size=voxel_size, layer_type=layer_type)
+            if voxel_offset is None:
+                voxel_offset = (0, 0, 0)
+            voxel_offset = Cartesian.from_collection(voxel_offset)
+
+            if isinstance(bbox, str):
+                bbox = BoundingBox.from_string(bbox)
+
+            if bbox_start is not None:
+                if bbox is not None:
+                    raise ValueError('bbox_start and bbox are mutually exclusive')
+                if bbox_stop is None and bbox_size is None:
+                    raise ValueError('bbox_stop or bbox_size must be provided')
+                if bbox_size is not None:
+                    bbox = BoundingBox.from_delta(bbox_start, bbox_size)
+                else:
+                    bbox = BoundingBox.from_list([*bbox_start, *bbox_stop])
+
+            if bbox is not None:
+                bbox_slices = (bbox - voxel_offset).slices
+                fnames = fnames[bbox_slices[0]]
+                tif_slice = bbox_slices[1:]
+                chunk_offset = bbox.minpt
+            else:
+                tif_slice = None
+                chunk_offset = voxel_offset
+
+            # Use available CPU cores minus if workers is negative (minus n if workers == -(n+1))
+            if workers is not None and workers < 0:
+                workers = os.cpu_count() + 1 + workers
+
+            if workers > 1:
+                # from chunkflow.lib.utils import SharedMemoryContainer  # avoid circular import
+                #
+                # section = _load_tiff(fnames[0], tif_slice, verbose=verbose)
+                # if dtype is None:
+                #     dtype = section.dtype
+                # with SharedMemoryManager() as smm:
+                #     arr_shm = SharedMemoryContainer.create_empty((len(fnames), *section.shape[-2:]), dtype=dtype)
+                #     arr_shm.load()[0] = section
+                #     process_map(
+                #         _load_tiff,
+                #         fnames[1:], repeat(tif_slice), repeat(arr_shm), range(1, len(fnames)),
+                #         repeat(missing_value), repeat(verbose),
+                #         max_workers=workers,
+                #         desc=f'loading tif files ({workers} workers): ',
+                #     )
+                #     arr = arr_shm.load()
+
+                # sections = process_map(
+                #     _load_tiff,
+                #     fnames, repeat(tif_slice), repeat(verbose),
+                #     max_workers=workers,
+                #     desc=f'loading tif files ({workers} workers): ',
+                # )
+                # with tqdm(total=len(sections), desc='filling missing sections: ') as pbar:
+                #     arr = np.expand_dims(sections.pop(0), 0)
+                #     pbar.update()
+                #     while sections:
+                #         section = sections.pop(0)
+                #         if section is None:
+                #             section = np.full(arr.shape[1:], missing_value, dtype=dtype)
+                #         arr = np.append(arr, np.expand_dims(section, 0), axis=0)
+                #         pbar.update()
+
+                fnames_chunked = [fnames[i:i + parallel_chunk_size] for i in range(0, len(fnames), parallel_chunk_size)]
+                chunks = process_map(
+                    _load_tiffs_chunk,
+                    fnames_chunked, repeat(tif_slice), repeat(dtype), repeat(verbose),
+                    max_workers=workers,
+                    desc=f'loading tif files ({workers} workers): ',
+                )
+                with tqdm(total=len(fnames), desc='concatenating chunks: ') as pbar:
+                    arr, missing_frames = chunks.pop(0)
+                    arr = arr.copy()
+                    pbar.update(arr.shape[0])
+                    while chunks:
+                        current_len = arr.shape[0]
+                        arr.resize(min(current_len + parallel_chunk_size, len(fnames)), *arr.shape[1:])
+                        chunk_arr, chunk_missing_frames = chunks.pop(0)
+                        arr[current_len:, ...] = chunk_arr.copy()
+                        missing_frames.extend(list(np.array(chunk_missing_frames) + current_len))
+                        pbar.update(arr.shape[0] - current_len)
+            else:
+                arr, missing_frames = _load_tiffs_chunk(tqdm(fnames, desc=f'loading tif files: '),
+                                                        tif_slice, dtype, verbose)
+        print(f'read {file_name} with chunk size of {arr.shape}, voxel offset: {chunk_offset}, voxel size: {voxel_size}')
+        if len(missing_frames) > 0:
+            print(f'{len(missing_frames)} missing frames... filling with {missing_value}')
+            _fill_missing_frames(arr, missing_frames, missing_value, verbose=verbose)
+        return cls(arr, voxel_offset=chunk_offset, voxel_size=voxel_size, layer_type=layer_type)
     
-    def to_tif(self, file_name: str = None, file_dir: str = None, compression: str = 'zlib', two_dim=False):
+    def to_tif(
+            self,
+            file_name: str = None,
+            file_name_prefix: str = None,
+            file_dir: str = None,
+            compression: str = 'zlib',
+            two_dim=False,
+    ):
         if file_name is None:
             file_name = f'{self.bbox.string}.tif'
+            if file_name_prefix:
+                file_name = file_name_prefix + file_name
         if file_dir is not None:
             file_name = os.path.join(file_dir, file_name)
 
@@ -288,12 +536,13 @@ class Chunk(NDArrayOperatorsMixin):
         else:
             print(f'write chunk to file: {file_name}')
             tifffile.imwrite(
-                file_name, data=img,
-                volumetric = True,
+                file_name,
+                data=img,
+                # volumetric=True,
                 # resolution=self.voxel_size.tuple,
                 # imagej=True,
-                metadata = metadata,
-                compression = compression,
+                metadata=metadata,
+                compression=compression,
             )
 
     @classmethod
