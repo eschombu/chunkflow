@@ -1250,6 +1250,8 @@ def save_tif(tasks, input_chunk_name: str, file_name: str, file_name_prefix: str
     help='physical size of voxels. The unit is assumed to be nm.')
 @click.option('--channels', '-c', type=str, default=None,
     help='selected channels.')
+@click.option('--cutout-bbox', type=str, default=None, callback=default_none,
+              help='cutout bbox in the array')
 @click.option('--cutout-start', '-t', type=click.INT, nargs=3, callback=default_none,
               help='cutout voxel offset in the array')
 @click.option('--cutout-stop', '-p', type=click.INT, nargs=3, callback=default_none,
@@ -1266,17 +1268,24 @@ def save_tif(tasks, input_chunk_name: str, file_name: str, file_name_prefix: str
 @operator
 def load_h5(tasks, name: str, file_name: str, dataset_path: str,
             dtype: str, layer_type: str, voxel_offset: tuple, 
-            voxel_size: tuple, channels: str, cutout_start: tuple, 
-            cutout_stop: tuple, cutout_size: tuple, set_bbox: bool,
-            remove_empty: bool, output_chunk_name: str):
+            voxel_size: tuple, channels: str, cutout_bbox: str,
+            cutout_start: tuple, cutout_stop: tuple, cutout_size: tuple,
+            set_bbox: bool, remove_empty: bool, output_chunk_name: str):
     """Read HDF5 files."""
     for task in tasks:
         if task is not None:
             start = time()
             
             file_name_tmp = file_name
-            if 'bbox' in task and cutout_start is None:
+            bbox = None
+            if cutout_bbox is not None:
+                if cutout_start is not None or cutout_stop is not None or cutout_size is not None:
+                    raise ValueError('cutout_bbox and cutout_start/stop/size can not be used at the same time.')
+                bbox = BoundingBox.from_string(cutout_bbox)
+            elif 'bbox' in task and cutout_start is None:
                 bbox = task['bbox']
+
+            if bbox is not None:
                 print(f'bbox: {bbox}')
                 cutout_start_tmp = bbox.minpt
                 cutout_stop_tmp = bbox.maxpt
