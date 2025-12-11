@@ -8,6 +8,7 @@ from collections import defaultdict
 import neuroglancer as ng
 import numpy as np
 from tqdm import tqdm
+from matplotlib.colors import to_rgba, to_hex
 
 from chunkflow.chunk import Chunk
 from chunkflow.synapses import Synapses
@@ -38,7 +39,8 @@ class NeuroglancerOperator(OperatorBase):
     def __init__(self,
                  name: str = 'neuroglancer',
                  port: int = None,
-                 voxel_size: Tuple = None):
+                 voxel_size: Tuple = None,
+    ):
         super().__init__(name=name)
         self.port = port
         self.voxel_size = voxel_size
@@ -162,18 +164,39 @@ void main() {
     def _append_point_annotation_layer(self, 
             viewer_state: ng.viewer_state.ViewerState, 
             name: str, points: PointCloud, 
-            color: str = '#ff0', size: int = 8):
+            color: str = '#ff0', alpha: float = None, size: int = 8):
         annotations = []
+
+        if alpha is not None:
+            rgba = to_hex(to_rgba(color, alpha=float(alpha)), keep_alpha=True)
+            color_prop_spec = ng.AnnotationPropertySpec(
+                id='color',
+                type='rgba',
+                default=rgba,
+            )
+        else:
+            color_prop_spec = ng.AnnotationPropertySpec(
+                id='color',
+                type='rgb',
+                default=color,
+            )
 
         for sid in range(points.point_num):
             # we would like to show line first and then the presynapse point
             # so, we have distinct color to show T-bar
-            pre_annotation = ng.PointAnnotation(
+            if points.labels is not None:
+                full_label = str(points.labels[sid])
+                label_parts = [np.uint32(full_label[:8]),
+                               np.uint32(full_label[8:16] or 0),
+                               np.uint32(full_label[16:24] or 0)]
+            else:
+                label_parts = [sid, 0, 0]
+            annotation = ng.PointAnnotation(
                 id=str(sid),
                 point=points.points[sid, :].tolist()[::-1],
-                props=[color, size]
+                props=label_parts + [rgba, size]
             )
-            annotations.append(pre_annotation)
+            annotations.append(annotation)
 
         viewer_state.layers.append(
             name=name,
@@ -185,19 +208,30 @@ void main() {
                         points.voxel_size.x, 
                         points.voxel_size.y, 
                         points.voxel_size.z, 
-                    )
+                    ),
                 ),
                 annotation_properties=[
                     ng.AnnotationPropertySpec(
-                        id='color',
-                        type='rgb',
-                        default='red',
+                        id='id0',
+                        type='uint32',
+                        default=0,
                     ),
+                    ng.AnnotationPropertySpec(
+                        id='id1',
+                        type='uint32',
+                        default=0,
+                    ),
+                    ng.AnnotationPropertySpec(
+                        id='id2',
+                        type='uint32',
+                        default=0,
+                    ),
+                    color_prop_spec,
                     ng.AnnotationPropertySpec(
                         id='size',
                         type='float32',
                         default=5
-                    )
+                    ),
                 ],
                 annotations=annotations,
                 shader='''
@@ -385,7 +419,7 @@ emitRGB(vec3(toNormalized(getDataValue(0)),
                 if name not in datas and ignore_missing:
                     continue
                 data = datas[name]
-                layer_type = layer_kwargs.pop('type', data.layer_type)
+                layer_type = layer_kwargs.pop('type', None)
                 layer_args = (viewer_state, name, data)
                 # breakpoint()
                 
@@ -404,6 +438,7 @@ emitRGB(vec3(toNormalized(getDataValue(0)),
                     # points
                     self._append_point_annotation_layer(*layer_args, **layer_kwargs)
                 elif isinstance(data, Chunk):
+                    layer_type = layer_type or data.layer_type
                     if layer_type is None:
                         if data.is_image:
                             self._append_image_layer(*layer_args, **layer_kwargs)
