@@ -815,6 +815,21 @@ def save_points(tasks, input_name: str, file_path: str):
             points.to_h5(file_path)
         yield task
 
+
+@main.command('load-points')
+@click.option('--file-path', '-f',
+    type=click.Path(file_okay=True, dir_okay=True, resolve_path=True),
+    required=True, help='HDF5 file path.')
+@click.option('--output-name', '-o', type=str, default='point_cloud')
+@operator
+def load_points(tasks, file_path: str, output_name: str):
+    """Save synapses as HDF5 file."""
+    for task in tasks:
+        if task is not None:
+            points = PointCloud.from_h5(file_path)
+            task[output_name] = points
+        yield task
+
  
 @main.command('save-synapses')
 @click.option('--input-name', '-i', type=str, default=DEFAULT_SYNAPSES_NAME)
