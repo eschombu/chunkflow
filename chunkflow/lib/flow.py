@@ -2,6 +2,7 @@ import os
 import pdb
 import sys
 import traceback
+from datetime import datetime, UTC
 from typing import Union
 
 from functools import update_wrapper, wraps
@@ -16,6 +17,7 @@ class CartesianParamType(click.ParamType):
     def convert(self, value: Union[list, tuple], param, ctx):
         assert len(value) == 3
         return Cartesian.from_collection(value)        
+
 
 CartesianParam = CartesianParamType()
 
@@ -54,20 +56,26 @@ def default_none(ctx, _, value):
     help='show more information or not. default is False.')
 @click.option('--debug/--no-debug', default=False,
     help='drop into pdb.postmortem upon exception.')
-def main(mip, dry_run, verbose, debug):
+@click.option('--timeit/--no-timeit', default=False,
+    help='print start, end, and overall time of the pipeline.')
+def main(mip: int, dry_run: bool, verbose: bool, debug: bool, timeit: bool):
     """Compose operators and create your own pipeline."""
     
     state['mip'] = mip
     state['dry_run'] = dry_run
     state['verbose'] = verbose
     state['debug'] = debug if 'SLURM_JOB_ID' not in os.environ else False
+    if timeit:
+        start_time = datetime.now(UTC)
+        state['timer'] = {'start': start_time}
+        print('Pipeline started at:', start_time.strftime('%Y-%m-%d %H:%M:%S%z'))
 
     if dry_run:
         print('\nYou are using dry-run mode, will not do the work!')
 
 
 @main.result_callback()
-def process_commands(operators, mip, dry_run, verbose, debug):
+def process_commands(operators, mip, dry_run, verbose, debug, timeit):
     """This result callback is invoked with an iterable of all 
     the chained subcommands. As in this example each subcommand 
     returns a function we can chain them together to feed one 
@@ -85,9 +93,19 @@ def process_commands(operators, mip, dry_run, verbose, debug):
         # Evaluate the stream and throw away the items.
         for _ in stream:
             pass
+        if state.get('timer') is not None:
+            state['timer']['stop'] = datetime.now(UTC)
+            elapsed_time = state['timer']['stop'] - state['timer']['start']
+            print('Pipeline finished at:', state['timer']['stop'].strftime('%Y-%m-%d %H:%M:%S%z'))
+            print('Total time:', elapsed_time.total_seconds(), 'seconds')
     except (KeyboardInterrupt, pdb.bdb.BdbQuit):
         sys.exit(1)
     except Exception:
+        if state.get('timer') is not None:
+            state['timer']['stop'] = datetime.now(UTC)
+            elapsed_time = state['timer']['stop'] - state['timer']['start']
+            print('Pipeline stopped at:', state['timer']['stop'].strftime('%Y-%m-%d %H:%M:%S%z'))
+            print('Total time:', elapsed_time.total_seconds(), 'seconds')
         if state.get('debug'):
             traceback.print_exc()
             pdb.post_mortem()
