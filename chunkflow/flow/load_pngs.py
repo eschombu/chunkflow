@@ -29,6 +29,7 @@ def load_png_images(
         bbox: BoundingBox = None, 
         voxel_offset: Cartesian = Cartesian(0, 0, 0),
         voxel_size: Cartesian = Cartesian(1, 1, 1),
+        bbox_slice_filenames: bool = False,
         digit_num: int = 5,
         dtype: np.dtype = None,
         layer_type: str = 'image',
@@ -58,6 +59,8 @@ def load_png_images(
         bbox = BoundingBox.from_delta(voxel_offset, shape)
     elif len(all_png_filenames) == bbox.shape[0]:
         file_names = [os.path.join(dir_path, fname) for fname in all_png_filenames]
+    elif bbox_slice_filenames:
+        file_names = [os.path.join(dir_path, fname) for fname in all_png_filenames[bbox.start[0]:bbox.stop[0]]]
     else:
         # Allow for a path prefix and a bbox to determine which png files to load
         file_names = []

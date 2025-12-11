@@ -968,6 +968,8 @@ def save_nrrd(tasks, input_chunk_name, file_name):
               help='cutout chunk size')
 @click.option('--infer-chunk/--no-infer-chunk', '-i', default=False,
               help='infer chunk cutout boundaries from other chunks.')
+@click.option('--bbox-slice-filenames/--no-bbox-slice-filenames', default=False,
+              help='use the bounding box to slice found filenames.')
 @click.option('--dtype', type=str, default=None,
               help='data type of output chunk.')
 @click.option('--layer-type', type=str, default='image',
@@ -977,8 +979,9 @@ def save_nrrd(tasks, input_chunk_name, file_name):
 @operator
 def load_png(tasks: dict, path: str, 
                 output_chunk_name: str, cutout_offset: tuple,
-                voxel_offset: tuple, voxel_size: tuple, 
-                digit_num: int, chunk_size: tuple, infer_chunk: bool,
+                voxel_offset: tuple, voxel_size: tuple,
+                chunk_size: tuple, infer_chunk: bool,
+                digit_num: int, bbox_slice_filenames: bool,
                 dtype: str, layer_type: str, workers: int):
     """Read a series of png files."""
     cutout_offset = Cartesian.from_collection(cutout_offset)
@@ -1000,6 +1003,7 @@ def load_png(tasks: dict, path: str,
                 path,
                 bbox=bbox,
                 voxel_offset=voxel_offset,
+                bbox_slice_filenames=bbox_slice_filenames,
                 digit_num=digit_num,
                 voxel_size=voxel_size,
                 dtype=dtype,
