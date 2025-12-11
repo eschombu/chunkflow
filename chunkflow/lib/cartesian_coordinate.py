@@ -15,9 +15,10 @@ from typing import List, Optional, Self, Union
 
 import numpy as np
 import h5py
+import zarr
 
 from cloudvolume import CloudVolume
-from cloudvolume.lib import Vec, Bbox
+from cloudvolume.lib import Bbox, Vec, yellow
 
 BOUNDING_BOX_RE = re.compile(r'(-?\d+)-(-?\d+)_(-?\d+)-(-?\d+)_(-?\d+)-(-?\d+)(?:\.gz|\.br|\.h5|\.json|\.npy|\.tif|\.csv|\.pkl|\.png|\.jpg)?$')
 
@@ -634,9 +635,20 @@ class BoundingBoxes(UserList):
                     roi_start = Cartesian(0, 0, 0)
                 if roi_size is None and chunk_size is not None:
                     roi_size = Cartesian.from_collection(chunk_size)
-
                 roi_stop = roi_start + roi_size
+            if volume_path.endswith('.zarr'):
+                assert os.path.exists(volume_path)
+                za = zarr.open(volume_path, mode='r')
+                if roi_start is None:
+                    roi_start = Cartesian(0, 0, 0)
+                if roi_size is None and roi_stop is None:
+                    roi_stop = Cartesian.from_collection(za.shape)
+                    roi_size = roi_stop - roi_start
+                else:
+                    print(yellow('ROI size or stop already determined, ignoring zarr shape'))
             else:
+                if '://' not in volume_path:
+                    volume_path = 'file://' + volume_path
                 vol = CloudVolume(volume_path, mip=mip, use_https=use_https)
                 # dataset shape as z,y,x
                 dataset_size = vol.mip_shape(mip)[:3][::-1]
