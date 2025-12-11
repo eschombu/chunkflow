@@ -2394,13 +2394,15 @@ def napari(tasks, name, voxel_size, inputs):
               help='a list of chunk names separated by comma.')
 @click.option('--ignore-missing/--raise-missing', '-I/', default=False,
               help='toggle exceptions for missing chunk names.')
+@click.option('--set-viewer-position/--no-set-viewer-position', default=False,
+              help='set neuroglancer viewer position to the center of chunk/points.')
 @operator
-def neuroglancer(tasks, name, voxel_size, port, inputs, ignore_missing):
+def neuroglancer(tasks, name, voxel_size, port, inputs, ignore_missing, set_viewer_position):
     """Visualize the chunk using neuroglancer."""
     ng_op = NeuroglancerOperator(name=name, port=port, voxel_size=voxel_size)
     for task in tasks:
         if task is not None:
-            ng_op(task, selected=inputs, ignore_missing=ignore_missing)
+            ng_op(task, selected=inputs, ignore_missing=ignore_missing, set_viewer_position=set_viewer_position)
         yield task
 
 

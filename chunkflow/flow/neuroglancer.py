@@ -10,6 +10,7 @@ import numpy as np
 from tqdm import tqdm
 from matplotlib.colors import to_rgba, to_hex
 
+from chunkflow.lib.cartesian_coordinate import BoundingBox
 from chunkflow.chunk import Chunk
 from chunkflow.synapses import Synapses
 from chunkflow.point_cloud import PointCloud
@@ -379,7 +380,7 @@ emitRGB(vec3(toNormalized(getDataValue(0)),
             shader=shader
         )
 
-    def __call__(self, datas: dict, selected: str = None, ignore_missing=False):
+    def __call__(self, datas: dict, selected: str = None, ignore_missing=False, set_viewer_position=False,):
         """
         Parameters:
         chunks: multiple chunks
@@ -414,6 +415,7 @@ emitRGB(vec3(toNormalized(getDataValue(0)),
         ng.set_server_bind_address(bind_address='0.0.0.0', bind_port=self.port)
         viewer = ng.Viewer()
         with viewer.txn() as viewer_state:
+            viewer_bbox = None
             for name in selected:
                 name, layer_kwargs = parse_selected_args(name)
                 if name not in datas and ignore_missing:
@@ -428,15 +430,51 @@ emitRGB(vec3(toNormalized(getDataValue(0)),
                 elif isinstance(data, PointCloud):
                     # points
                     self._append_point_annotation_layer(*layer_args, **layer_kwargs)
+                    if set_viewer_position:
+                        min_pt = np.min(data.points, axis=0)
+                        max_pt = np.max(data.points, axis=0)
+                        if viewer_bbox is None:
+                            viewer_bbox = BoundingBox(min_pt, max_pt + 1)
+                        else:
+                            viewer_bbox = BoundingBox(np.min([viewer_bbox.start, min_pt], axis=0),
+                                                      np.max([viewer_bbox.stop, max_pt + 1], axis=0))
                 elif isinstance(data, Synapses):
                     # this could be synapses
                     self._append_synapse_annotation_layer(*layer_args, **layer_kwargs)
-                elif (isinstance(data, defaultdict) or isinstance(data, dict)) \
-                        and len(data)>0:
+                    if set_viewer_position:
+                        points = np.concatenate([data.pre, data.post], axis=0)
+                        min_pt = np.min(points, axis=0)
+                        max_pt = np.max(points, axis=0)
+                        if viewer_bbox is None:
+                            viewer_bbox = BoundingBox(min_pt, max_pt + 1)
+                        else:
+                            viewer_bbox = BoundingBox(np.min([viewer_bbox.start, min_pt], axis=0),
+                                                      np.max([viewer_bbox.stop, max_pt + 1], axis=0))
+                elif (isinstance(data, defaultdict) or isinstance(data, dict)) and len(data) > 0:
                     self._append_skeleton_layer(*layer_args, **layer_kwargs)
+                    if set_viewer_position:
+                        all_points = []
+                        for skel in data.values():
+                            all_points.append(skel.vertices)
+                        all_points = np.concatenate(all_points, axis=0)
+                        min_pt = np.min(all_points, axis=0)
+                        max_pt = np.max(all_points, axis=0)
+                        if viewer_bbox is None:
+                            viewer_bbox = BoundingBox(min_pt, max_pt + 1)
+                        else:
+                            viewer_bbox = BoundingBox(np.min([viewer_bbox.start, min_pt], axis=0),
+                                                      np.max([viewer_bbox.stop, max_pt + 1], axis=0))
                 elif isinstance(data, np.ndarray) and 2 == data.ndim and 3 == data.shape[1]:
                     # points
                     self._append_point_annotation_layer(*layer_args, **layer_kwargs)
+                    if set_viewer_position:
+                        min_pt = np.min(data.points, axis=0)
+                        max_pt = np.max(data.points, axis=0)
+                        if viewer_bbox is None:
+                            viewer_bbox = BoundingBox(min_pt, max_pt + 1)
+                        else:
+                            viewer_bbox = BoundingBox(np.min([viewer_bbox.start, min_pt], axis=0),
+                                                      np.max([viewer_bbox.stop, max_pt + 1], axis=0))
                 elif isinstance(data, Chunk):
                     layer_type = layer_type or data.layer_type
                     if layer_type is None:
@@ -459,9 +497,21 @@ emitRGB(vec3(toNormalized(getDataValue(0)),
                     else:
                         breakpoint()
                         raise ValueError('only support image, affinity map, probability_map, and segmentation for now.')
+                    if set_viewer_position:
+                        min_pt = data.voxel_offset
+                        max_pt = data.voxel_offset + np.array(data.shape)
+                        if viewer_bbox is None:
+                            viewer_bbox = BoundingBox(min_pt, max_pt)
+                        else:
+                            viewer_bbox = BoundingBox(np.min([viewer_bbox.start, min_pt], axis=0),
+                                                      np.max([viewer_bbox.stop, max_pt], axis=0))
                 else:
                     breakpoint()
                     raise ValueError(f'do not support this type: {type(data)}')
+
+            if set_viewer_position and viewer_bbox is not None:
+                center = (viewer_bbox.start + viewer_bbox.stop) // 2
+                viewer_state.position = center[::-1].tolist()
 
         print('Open this url in browser: ')
         viewer_url = viewer.get_viewer_url()
