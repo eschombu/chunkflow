@@ -125,7 +125,7 @@ def create_bbox(start: tuple, stop: tuple, center: tuple, size: tuple, string: s
 @click.option('--grid-size', '-g',
               type=click.INT, default=None, nargs=3, callback=default_none,
               help='(z y x), grid size of output blocks')
-@click.option('--file-path', '-f', default = None,
+@click.option('--file-path', '-f', default=None,
               type=click.Path(writable=True, dir_okay=False, resolve_path=True),
               help='output tasks as an numpy array formated as npy.')
 @click.option('--queue-name', '-q',
@@ -585,7 +585,8 @@ def create_info(tasks, input_chunk_name: str, volume_path: str, channel_num: int
                 mesh = None
 
             info = CloudVolume.create_new_info(
-                channel_num, layer_type=layer_type,
+                channel_num,
+                layer_type=layer_type,
                 data_type=data_type,
                 encoding=encoding,
                 resolution=voxel_size[::-1],
@@ -595,8 +596,8 @@ def create_info(tasks, input_chunk_name: str, volume_path: str, channel_num: int
                 factor=Vec(factor),
                 max_mip=max_mip,
                 compressed_segmentation_block_size=(8, 8, 8),
-                mesh = mesh,
-                )
+                mesh=mesh,
+            )
             vol = CloudVolume(volume_path, info=info)
             vol.commit_info()
         yield task
@@ -948,7 +949,7 @@ def save_nrrd(tasks, input_chunk_name, file_name):
 @main.command('load-png')
 @click.option('--path', '-p',
               required=True, type=str,
-              help='directory path prefix of png files or a single PNG file.')
+              help='directory path prefix of PNG files or a single PNG file.')
 @click.option('--output-chunk-name', '-o',
               type=str, default=DEFAULT_CHUNK_NAME,
               help='output chunk name')
@@ -972,7 +973,7 @@ def save_nrrd(tasks, input_chunk_name, file_name):
 @click.option('--layer-type', type=str, default='image',
               help='layer type of output chunk (default: image).')
 @click.option('--workers', '-w', type=int, default=1,
-              help='size of ProcessPool to use for loading png files.')
+              help='size of ProcessPool to use for loading PNG files.')
 @operator
 def load_png(tasks: dict, path: str, 
                 output_chunk_name: str, cutout_offset: tuple,
@@ -1014,7 +1015,7 @@ def load_png(tasks: dict, path: str,
 @click.option('--file-name', '-f', required=True,
               type=click.Path(exists=True, dir_okay=True),
               help='read chunk from TIFF file.')
-@click.option('--voxel-offset', '-v', type=click.INT, nargs=3, callback=default_none,
+@click.option('--voxel-offset', '-v', type=click.INT, nargs=3, default=None, callback=default_none,
               help='global offset of this chunk')
 @click.option('--voxel-size', '-s', type=click.INT, nargs=3, default=None, callback=default_none,
               help='physical size of voxels. The unit is assumed to be nm.')
@@ -1177,7 +1178,7 @@ def load_h5(tasks, name: str, file_name: str, dataset_path: str,
 
 @main.command('save-h5')
 @click.option('--input-name', '-i',
-              type=str, default='chunk', help='input chunk name')
+              type=str, default=DEFAULT_CHUNK_NAME, help='input chunk name')
 @click.option('--file-name', '-f',
               type=click.Path(dir_okay=True, resolve_path=False), required=True,
               help='file name or prefix of output HDF5 file.')
@@ -1201,27 +1202,28 @@ def save_h5(tasks, input_name: str, file_name: str, chunk_size: tuple,
     """Save chunk to HDF5 file."""
     for task in tasks:
         if task is not None:
+            path = str(file_name)  # Copy path so it is not reused in the task loop
             data = task[input_name]
-            if not file_name.endswith('.h5'):
+            if not path.endswith('.h5'):
                 if isinstance(data, Chunk):
                     bbox = data.bbox
                 else:
                     bbox = task['bbox']
-                file_name = f'{file_name}{bbox.string}.h5'
+                path = f'{path}{bbox.string}.h5'
             if isinstance(data, Chunk):
                 if dtype is not None:
                     data = data.astype(dtype)
                 data.to_h5(
-                    file_name, with_offset, 
+                    path, with_offset,
                     chunk_size=chunk_size, 
                     compression=compression,
                     voxel_size=voxel_size)
             elif isinstance(data, Synapses):
-                data.to_h5(file_name)
+                data.to_h5(path)
             elif data is None:
                 if touch:
-                    os.makedirs(os.path.dirname(file_name), exist_ok=True)
-                    Path(file_name).touch()
+                    os.makedirs(os.path.dirname(path), exist_ok=True)
+                    Path(path).touch()
             else:
                 raise ValueError(f'unsupported type of input data: {data}')
         yield task
@@ -2498,8 +2500,7 @@ def save_precomputed(tasks, name: str, volume_path: str,
 @click.option('--threshold', '-t', type=click.FLOAT, default=0.5,
               help='threshold to cut the map.')
 @operator 
-def threshold(tasks, name, input_chunk_name, output_chunk_name, 
-              threshold):
+def threshold(tasks, name, input_chunk_name, output_chunk_name, threshold):
     """Threshold the probability map."""
     for task in tasks:
         if task is not None:
