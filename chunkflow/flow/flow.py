@@ -15,21 +15,21 @@ from tqdm import tqdm
 import zarr
 import tinybrain
 
-from chunkflow.lib.flow import *
 from cloudvolume import CloudVolume
 from cloudvolume.lib import Vec
 from cloudfiles import CloudFiles
-
-from chunkflow.lib.aws.sqs_queue import SQSQueue
-from chunkflow.lib.cartesian_coordinate import Cartesian, BoundingBox, BoundingBoxes
-from chunkflow.lib.mito_segment_dev import label_segments, run_save_chunk_segmentation
-from chunkflow.lib.utils import deterministic_shuffle, infer_bbox, str_to_dict
 
 from chunkflow.chunk import Chunk
 from chunkflow.chunk.affinity_map import AffinityMap
 from chunkflow.chunk.image import Image
 from chunkflow.chunk.segmentation import Segmentation
 from chunkflow.flow.divid_conquer.inferencer import Inferencer
+from chunkflow.lib.aws.sqs_queue import SQSQueue
+from chunkflow.lib.cartesian_coordinate import Cartesian, BoundingBox, BoundingBoxes
+from chunkflow.lib.flow import DEFAULT_CHUNK_NAME, DEFAULT_SKELETON_NAME, DEFAULT_SYNAPSES_NAME
+from chunkflow.lib.flow import default_none, generator, get_initial_task, main, operator, state
+from chunkflow.lib.mito_segment_dev import label_segments, run_save_chunk_segmentation
+from chunkflow.lib.utils import deterministic_shuffle, infer_bbox, str_to_dict, SharedMemoryContainer
 from chunkflow.point_cloud import PointCloud
 from chunkflow.synapses import Synapses
 from chunkflow.volume import PrecomputedVolume
@@ -142,7 +142,10 @@ make the chunk size consistent or cut off at the stopping boundary.""")
               type=click.INT, default=None, help='stop index of task list.')
 @click.option('--task-index-step',
               type=click.INT, default=None, help='index step of task list.')
-@click.option('--shuffle/--no-shuffle', '-d',
+@click.option('--task-indices-path', default=None,
+              type=click.Path(dir_okay=False, resolve_path=True),
+              help='text file containing task bbox indices to include.')
+@click.option('--shuffle/--no-shuffle',
               default=False, help='shuffle chunk bboxes before generating tasks.')
 @click.option('--reorder-step',
     type=click.INT, default=None, help='step size of reordering')
@@ -157,15 +160,20 @@ def generate_tasks(
         bounding_box: str, grid_size: tuple,
         respect_chunk_size: bool, aligned_block_size: tuple,
         task_index_start: int, task_index_stop: int, task_index_step: int,
-        shuffle: bool, reorder_step: int, disbatch: bool, use_https: bool,
-        file_path: str, queue_name: str):
+        task_indices_path: str, shuffle: bool, reorder_step: int, disbatch: bool,
+        use_https: bool, file_path: str, queue_name: str):
     """Generate a batch of tasks."""
     if mip is None:
         mip = state['mip']
     assert mip >=0 
 
     if bounding_box is not None:
-        bboxes = [BoundingBox.from_string(bounding_box)]
+        if os.path.isfile(bounding_box):
+            with open(bounding_box, 'r') as f:
+                bbox_strs = [s.strip() for s in f.readlines() if s.strip()]
+            bboxes = [BoundingBox.from_string(s) for s in bbox_strs]
+        else:
+            bboxes = [BoundingBox.from_string(bounding_box)]
         if chunk_size is None:
             chunk_size = bboxes[0].shape
         else:
@@ -181,6 +189,14 @@ def generate_tasks(
             use_https=use_https
         )
     print(f'number of all the candidate tasks: {len(bboxes)}')
+
+    if task_indices_path:
+        with open(task_indices_path) as f:
+            task_indices = [int(i.strip()) for i in f.readlines() if i.strip()]
+        print(f'selecting {len(task_indices)} indices specified in {task_indices_path}')
+        bboxes = [bboxes[i] for i in task_indices]
+        task_index_start = 0
+
     if shuffle:
         print('shuffling the bounding boxes.')
         bboxes = deterministic_shuffle(bboxes, key=lambda x: x.string)
@@ -189,12 +205,20 @@ def generate_tasks(
         bboxes = [bboxes[i] for i in idx_iter]
 
     if disbatch:
-        assert 'DISBATCH_REPEAT_INDEX' in os.environ
-        disbatch_index = int(os.environ['DISBATCH_REPEAT_INDEX'])
-        assert disbatch_index < len(bboxes), f'DISBATCH_REPEAT_INDEX is larger than the task number!'
-        bboxes = [bboxes[disbatch_index],]
-        task_index_start = 0
-        print(f'selected a task with disBatch index {disbatch_index}')
+        assert ('DISBATCH_REPEAT_INDEX' in os.environ or 'CHUNKFLOW_REPEAT_INDICES' in os.environ), \
+            'disbatch is turned on, but DISBATCH_REPEAT_INDEX or CHUNKFLOW_REPEAT_INDICES not found in environment.'
+        if 'DISBATCH_REPEAT_INDEX' in os.environ:
+            disbatch_index = int(os.environ['DISBATCH_REPEAT_INDEX'])
+            assert disbatch_index < len(bboxes), f'DISBATCH_REPEAT_INDEX is larger than the task number!'
+            bboxes = [bboxes[disbatch_index],]
+            task_index_start = 0
+            print(f'selected a task with disBatch index {disbatch_index}')
+        else:
+            disbatch_index = None
+            task_indices = [int(i.strip()) for i in os.environ['CHUNKFLOW_REPEAT_INDICES'].split(',') if i.strip()]
+            bboxes = [bboxes[i] for i in task_indices]
+            task_index_start = 0
+            print(f'selected {len(bboxes)} tasks with indices {task_indices}')
     elif any(x for x in [task_index_start, task_index_stop, task_index_step]):
         task_index_slice = slice(task_index_start, task_index_stop, task_index_step)
         bboxes = bboxes[task_index_slice]
@@ -216,11 +240,14 @@ def generate_tasks(
         queue.send_message_list(bboxes)
     else:
         for bbox_index, bbox in enumerate(bboxes):
-            if disbatch:
+            if disbatch and disbatch_index is not None:
                 assert len(bboxes) == 1
                 bbox_index = disbatch_index
-            print(f'executing task {bbox_index + task_index_start} in {bbox_num + task_index_start} with bounding box: '
-                  f'{bbox.string}')
+                print(f'executing task {bbox_index + task_index_start} in {bbox_num + task_index_start} with '
+                      f'bounding box: {bbox.string}')
+            else:
+                print(f'executing task {bbox_index + task_index_start} in {bbox_num + task_index_start} with '
+                      f'bounding box: {bbox.string}')
             task = get_initial_task()
             task['bbox'] = bbox
             task['bbox_index'] = bbox_index
