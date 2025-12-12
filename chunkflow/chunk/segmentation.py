@@ -83,17 +83,8 @@ class Segmentation(Chunk):
         new_base_id = self.max()
         return new_base_id
 
-    def mask_fragments(self, voxel_num_threshold: int):
-        uniq, counts = fastremap.unique(self.array, return_counts=True)
-        fragment_ids = uniq[counts <= voxel_num_threshold]
-        print(f'masking out {len(fragment_ids)} fragments in {len(uniq)} with a percentage of {len(fragment_ids)/len(uniq)}')
-        self.array = fastremap.mask(self.array, fragment_ids)
-
-    def mask_except(self, selected_obj_ids: Union[str, list, set], count_selection_effect=False):
-        if selected_obj_ids is None:
-            print('we have not selected any objects to mask out.')
-            return
-
+    @staticmethod
+    def _parse_obj_ids(selected_obj_ids: Union[str, list, set]) -> set[int]:
         if isinstance(selected_obj_ids, str) and selected_obj_ids.endswith('.json'):
             # assume that ids is a json file in the storage path
             json_storage = CloudFiles(os.path.dirname(selected_obj_ids))
@@ -104,9 +95,28 @@ class Segmentation(Chunk):
         elif isinstance(selected_obj_ids, str):
             # a simple string, like "34,45,56,23"
             # this is used for small object numbers
-            selected_obj_ids = set([int(id) for id in selected_obj_ids.split(',')])
+            selected_obj_ids = set(int(id) for id in selected_obj_ids.split(','))
             print(f"selecting objects: {', '.join(str(s) for s in selected_obj_ids)}")
+        return set(selected_obj_ids)
 
+    def mask_objects(self, selected_obj_ids: Union[str, list, set]):
+        if selected_obj_ids is None:
+            print('we have not selected any objects to mask out.')
+            return
+        selected_obj_ids = self._parse_obj_ids(selected_obj_ids)
+        self.array = fastremap.mask(self.array, selected_obj_ids)
+
+    def mask_fragments(self, voxel_num_threshold: int):
+        uniq, counts = fastremap.unique(self.array, return_counts=True)
+        fragment_ids = uniq[counts <= voxel_num_threshold]
+        print(f'masking out {len(fragment_ids)} fragments in {len(uniq)} with a percentage of {len(fragment_ids)/len(uniq)}')
+        self.array = fastremap.mask(self.array, fragment_ids)
+
+    def mask_except(self, selected_obj_ids: Union[str, list, set], count_selection_effect=False):
+        if selected_obj_ids is None:
+            print('we have not selected any objects to mask out.')
+            return
+        selected_obj_ids = self._parse_obj_ids(selected_obj_ids)
         if count_selection_effect:
             num_before = len(fastremap.unique(self.array))
         self.array = fastremap.mask_except(self.array, list(selected_obj_ids))

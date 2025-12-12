@@ -2535,7 +2535,12 @@ def mask(tasks, name, input_names: str, output_suffix: str, volume_path: str,
 @click.option('--output_chunk_name', '-o', type=str, default=DEFAULT_CHUNK_NAME)
 @click.option('--dust-size-threshold', '-d', type=click.INT, default=None,
               help='eliminate small objects with voxel number less than threshold.')
-@click.option('--selected-obj-ids', '-s', type=str, default=None,
+@click.option('--remove-obj-ids', '-s', type=str, default=None,
+               help="""a list of segment ids to set to backgground. 
+               The ids should be separated by comma without space, such as "34,56,78,90"
+               it can also be a json file contains a list of ids. The json file path should
+               contain protocols, such as "gs://bucket/my/json/file/path.""")
+@click.option('--keep-obj-ids', '-s', type=str, default=None,
                help="""a list of segment ids to keep. This is for sparse meshing. 
                The ids should be separated by comma without space, such as "34,56,78,90"
                it can also be a json file contains a list of ids. The json file path should
@@ -2544,15 +2549,23 @@ def mask(tasks, name, input_names: str, output_suffix: str, volume_path: str,
               help='print effect of masking on number of objects.')
 @operator
 def mask_out_objects(tasks, input_chunk_name, output_chunk_name,
-                     dust_size_threshold: int, selected_obj_ids: List[int], verbose: bool):
+                     dust_size_threshold: int, keep_obj_ids: List[int], remove_obj_ids: List[int],
+                     verbose: bool):
     """Mask out objects in a segmentation chunk."""
-    if isinstance(selected_obj_ids, str) and selected_obj_ids.endswith('.json'):
+    if isinstance(keep_obj_ids, str) and keep_obj_ids.endswith('.json'):
         # assume that ids is a json file in the storage path
-        json_storage = CloudFiles(os.path.dirname(selected_obj_ids))
-        ids_str = json_storage.get_file(os.path.basename(selected_obj_ids))
-        selected_obj_ids = set(json.loads(ids_str))
-        assert len(selected_obj_ids) > 0
-        print(f'number of selected objects: {len(selected_obj_ids)}')
+        json_storage = CloudFiles(os.path.dirname(keep_obj_ids))
+        ids_str = json_storage.get_file(os.path.basename(keep_obj_ids))
+        keep_obj_ids = set(json.loads(ids_str))
+        assert len(keep_obj_ids) > 0
+        print(f'number of selected objects: {len(keep_obj_ids)}')
+    if isinstance(remove_obj_ids, str) and remove_obj_ids.endswith('.json'):
+        # assume that ids is a json file in the storage path
+        json_storage = CloudFiles(os.path.dirname(remove_obj_ids))
+        ids_str = json_storage.get_file(os.path.basename(remove_obj_ids))
+        remove_obj_ids = set(json.loads(ids_str))
+        assert len(remove_obj_ids) > 0
+        print(f'number of selected objects: {len(remove_obj_ids)}')
 
     for task in tasks:
         if task is not None:
@@ -2563,8 +2576,10 @@ def mask_out_objects(tasks, input_chunk_name, output_chunk_name,
 
             if dust_size_threshold is not None:
                 seg.mask_fragments(dust_size_threshold)
-            if selected_obj_ids is not None:
-                seg.mask_except(selected_obj_ids, count_selection_effect=verbose)
+            if keep_obj_ids is not None:
+                seg.mask_except(keep_obj_ids, count_selection_effect=verbose)
+            if remove_obj_ids is not None:
+                seg.mask_objects(remove_obj_ids)
 
             task[output_chunk_name] = seg
         yield task
