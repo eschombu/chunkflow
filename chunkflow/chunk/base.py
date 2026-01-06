@@ -112,11 +112,12 @@ def _load_tiffs_chunk(
         dtype: str = None,
         verbose=False,
 ) -> tuple[np.ndarray, list]:
-    first_nonempty_idx = [i for i, fname in enumerate(file_names) if fname is not None]
-    if len(first_nonempty_idx) == 0:
+    file_names = list(file_names)
+    first_nonempty_idx_fname = [(i, fname) for i, fname in enumerate(file_names) if fname is not None]
+    if len(first_nonempty_idx_fname) == 0:
         return None
-    first_nonempty_idx = first_nonempty_idx[0]
-    first_img = _load_tiff(file_names[first_nonempty_idx], bbox_slice, dtype, verbose)
+    first_nonempty_idx, first_nonempty_fname = first_nonempty_idx_fname[0]
+    first_img = _load_tiff(first_nonempty_fname, bbox_slice, dtype, verbose)
     imgs = np.empty((len(file_names), *first_img.shape), dtype=first_img.dtype)
     missing_ixs = []
     for i, fname in enumerate(file_names):
