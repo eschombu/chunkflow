@@ -910,7 +910,7 @@ ends with {cutout_stop}, size is {cutout_size}, voxel size is {voxel_size}.""")
         
     def ascontiguousarray(self) -> 'Chunk':
         new_array = np.ascontiguousarray(self.array)
-        return Chunk(new_array, voxel_offset=self.voxel_offset, voxel_size=self.voxel_size)
+        return Chunk(new_array, voxel_offset=self.voxel_offset, voxel_size=self.voxel_size, layer_type=self.layer_type)
 
     def max(self, *args, **kwargs):
         return self.array.max(*args, **kwargs)
@@ -947,7 +947,7 @@ ends with {cutout_stop}, size is {cutout_size}, voxel size is {voxel_size}.""")
                 voxel_offset = Cartesian.from_collection([voxel_offset[i] for i in axes])
             if voxel_size is not None:
                 voxel_size = Cartesian.from_collection([voxel_size[i] for i in axes])
-        return Chunk(new_array, voxel_offset=voxel_offset, voxel_size=voxel_size)
+        return Chunk(new_array, voxel_offset=voxel_offset, voxel_size=voxel_size, layer_type=self.layer_type)
 
     def fill(self, x):
         self.array.fill(x)
@@ -956,7 +956,7 @@ ends with {cutout_stop}, size is {cutout_size}, voxel size is {voxel_size}.""")
         """given a 4D array, squeeze the channel axis."""
         assert self.array.ndim == 4
         new_array = np.squeeze(self, axis=axis)
-        return Chunk(new_array, voxel_offset=self.voxel_offset, voxel_size=self.voxel_size)
+        return Chunk(new_array, voxel_offset=self.voxel_offset, voxel_size=self.voxel_size, layer_type=self.layer_type)
 
     # @profile(precision=0)
     def channel_voting(self):
@@ -1005,7 +1005,7 @@ ends with {cutout_stop}, size is {cutout_size}, voxel size is {voxel_size}.""")
                 raise ValueError('only support 3 or 6 elements.')
             voxel_offset = tuple(
                 o + m for o, m in zip(self.voxel_offset, margin_size))
-            return Chunk(new_array, voxel_offset=voxel_offset, voxel_size=self.voxel_size)
+            return Chunk(new_array, voxel_offset=voxel_offset, voxel_size=self.voxel_size, layer_type=self.layer_type)
         else:
             print('automatically crop the chunk to output bounding box.')
             assert output_bbox is not None
