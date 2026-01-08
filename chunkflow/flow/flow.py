@@ -358,7 +358,8 @@ def crop_margin(tasks, name: str, margin_size: tuple, crop_bbox: bool,
                 if crop_bbox and 'bbox' in task:
                     bbox = task['bbox']
                     assert isinstance(bbox, BoundingBox)
-                    bbox = bbox.adjust(-Cartesian.from_collection(margin_size))
+                    bbox = bbox.adjust(np.concatenate([margin_size[:3], -np.array(margin_size[3:])]))
+                    task['bbox'] = bbox
             else:
                 # use the output bbox for croping
                 task[output_chunk_name] = task[
